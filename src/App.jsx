@@ -413,6 +413,15 @@ input:-webkit-autofill:active{
   cursor:not-allowed;
   box-shadow: none;
 }
+.btnSmall{
+  padding: 7px 10px;
+  font-size: 10px;
+  letter-spacing: .06em;
+}
+.btnSmall svg{
+  width: 14px;
+  height: 14px;
+}
 .btnPrimary{
   border-color: rgba(249,115,22,.35);
   background: var(--color-primary);
@@ -427,6 +436,69 @@ input:-webkit-autofill:active{
 .btnDanger:hover{
   border-color: rgba(239,68,68,.55);
   color: #ef4444;
+}
+
+.toggleRow{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-input);
+}
+.toggleMeta{
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.toggleLabel{
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+}
+.toggleHint{
+  font-size: 11px;
+  color: var(--text-subtle);
+}
+.switch{
+  position: relative;
+  width: 48px;
+  height: 26px;
+  flex-shrink: 0;
+}
+.switch input{
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.switchSlider{
+  position: absolute;
+  inset: 0;
+  background: var(--text-subtle);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .2s ease;
+}
+.switchSlider::before{
+  content: '';
+  position: absolute;
+  height: 20px;
+  width: 20px;
+  left: 3px;
+  top: 3px;
+  background: #ffffff;
+  border-radius: 50%;
+  transition: transform .2s ease;
+  box-shadow: 0 2px 6px rgba(0,0,0,.25);
+}
+.switch input:checked + .switchSlider{
+  background: var(--color-primary);
+}
+.switch input:checked + .switchSlider::before{
+  transform: translateX(22px);
 }
 
 .progressWrap{
@@ -1194,6 +1266,23 @@ const downloadBlob = (blob, filename) => {
   window.URL.revokeObjectURL(url);
 };
 
+const buildCsvContent = (headers, rows) => {
+  const escapeCell = (value) => {
+    const str = safeToString(value ?? '');
+    if (/["\n,]/.test(str)) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const lines = [headers.map(escapeCell).join(',')];
+  rows.forEach((row) => {
+    const line = headers.map((header) => escapeCell(row[header])).join(',');
+    lines.push(line);
+  });
+  return lines.join('\n');
+};
+
 const StatusPill = ({ stage, isRunning }) => {
   let label = 'IDLE';
   let cls = '';
@@ -1292,6 +1381,7 @@ export default function App() {
   const [watchdogMaxItems, setWatchdogMaxItems] = useState(100);
   const [watchdogMaxRuntime, setWatchdogMaxRuntime] = useState('');
   const [watchdogMaxConcurrency, setWatchdogMaxConcurrency] = useState(5);
+  const [dateViolationEnabled, setDateViolationEnabled] = useState(true);
 
   const [watchdogJobs, setWatchdogJobs] = useState([]);
   const watchdogJobsRef = useRef([]);
@@ -1318,6 +1408,9 @@ export default function App() {
    */
   const [headers, setHeaders] = useState([]);
   const [rows, setRows] = useState([]);
+  const [dedupRows, setDedupRows] = useState([]);
+  const [purifiedRows, setPurifiedRows] = useState([]);
+  const [filteredRows, setFilteredRows] = useState([]);
   const [sourceBaseName, setSourceBaseName] = useState('pipeline');
 
   /**
@@ -1431,6 +1524,9 @@ export default function App() {
 
     setHeaders([]);
     setRows([]);
+    setDedupRows([]);
+    setPurifiedRows([]);
+    setFilteredRows([]);
     setSourceBaseName('pipeline');
 
     setIsRunning(false);
@@ -1479,6 +1575,19 @@ export default function App() {
       sorterOther: 0,
     });
   }, [setWatchdogJobsSafe]);
+
+  const downloadCsvSnapshot = useCallback(
+    (label, dataRows) => {
+      if (!headers.length || !dataRows.length) return;
+      const csv = buildCsvContent(headers, dataRows);
+      const date = new Date().toISOString().slice(0, 10);
+      const filename = `${sourceBaseName || 'pipeline'}_${label}_${date}.csv`;
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      downloadBlob(blob, filename);
+      addLog(`Downloaded: ${filename}`, 'success');
+    },
+    [addLog, headers, sourceBaseName]
+  );
 
   /**
    * ============================================================
@@ -1533,6 +1642,7 @@ export default function App() {
       retryCount: 0,
       startTime: null,
       itemCount: 0,
+      dateViolationStreak: 0,
     }));
 
     setWatchdogJobsSafe(newJobs);
@@ -1740,23 +1850,27 @@ export default function App() {
 
             updateWatchdogJob(job.id, { lastDate: displayDate });
 
-            const cutoffTime = new Date(watchdogMinDate).getTime();
+            if (dateViolationEnabled) {
+              const cutoffTime = new Date(watchdogMinDate).getTime();
 
-            const offender = items.find((item) => {
-              const { time: itemTime } = parseStartDateValue(item.start_date);
-              if (!itemTime) return false;
+              const offender = items.find((item) => {
+                const { time: itemTime } = parseStartDateValue(item.start_date);
+                if (!itemTime) return false;
 
-              if (isNaN(itemTime) || isNaN(cutoffTime)) return false;
-              return itemTime < cutoffTime;
-            });
+                if (isNaN(itemTime) || isNaN(cutoffTime)) return false;
+                return itemTime < cutoffTime;
+              });
 
-            if (offender) {
-              const nextStreak = (job.dateViolationStreak || 0) + 1;
-              const { display: offenderDate } = parseStartDateValue(offender.start_date);
-              updateWatchdogJob(job.id, { dateViolationStreak: nextStreak });
+              if (offender) {
+                const nextStreak = (job.dateViolationStreak || 0) + 1;
+                const { display: offenderDate } = parseStartDateValue(offender.start_date);
+                updateWatchdogJob(job.id, { dateViolationStreak: nextStreak });
 
-              if (nextStreak >= 10) {
-                await abortWatchdogJob(job, `Date Violation: ${offenderDate}`);
+                if (nextStreak >= 10) {
+                  await abortWatchdogJob(job, `Date Violation: ${offenderDate}`);
+                }
+              } else if (job.dateViolationStreak) {
+                updateWatchdogJob(job.id, { dateViolationStreak: 0 });
               }
             } else if (job.dateViolationStreak) {
               updateWatchdogJob(job.id, { dateViolationStreak: 0 });
@@ -1951,6 +2065,7 @@ export default function App() {
     allowSet,
     apiToken,
     customProxy,
+    dateViolationEnabled,
     memory,
     setWatchdogJobsSafe,
     updateWatchdogJob,
@@ -2100,6 +2215,9 @@ export default function App() {
     setFinalWorkbook(null);
     setLogs([]);
     setBatchProgress({ total: 0, completed: 0, active: 0 });
+    setDedupRows([]);
+    setPurifiedRows([]);
+    setFilteredRows([]);
 
     stopRef.current = false;
 
@@ -2161,6 +2279,7 @@ export default function App() {
         dedupRemoved: dupRemoved,
         afterDedup: deduped.length,
       }));
+      setDedupRows(deduped);
 
       addLog(`Deduplicator: removed ${dupRemoved} duplicates (by "${dedupColumn}").`, dupRemoved ? 'warning' : 'success');
 
@@ -2193,6 +2312,7 @@ export default function App() {
         purifierRemoved,
         afterPurify: purified.length,
       }));
+      setPurifiedRows(purified);
 
       addLog(
         `CSV Purifier: removed ${purifierRemoved} row(s) containing foreign script.`,
@@ -2250,6 +2370,7 @@ export default function App() {
         masterFilterRemoved,
         afterMasterFilter: kept.length,
       }));
+      setFilteredRows(kept);
 
       addLog(
         `CSV Master Filter: kept ${kept.length}, removed ${masterFilterRemoved} (column "${filterColumn}", mode "${matchMode}").`,
@@ -2491,6 +2612,9 @@ export default function App() {
     runWatchdogAndExportRows,
     sourceBaseName,
     urlColumn,
+    setDedupRows,
+    setFilteredRows,
+    setPurifiedRows,
   ]);
 
   /**
@@ -2867,6 +2991,23 @@ export default function App() {
                         </div>
                       </div>
 
+                      <div className="toggleRow" style={{ marginTop: 14 }}>
+                        <div className="toggleMeta">
+                          <div className="toggleLabel">Date Violation Guard</div>
+                          <div className="toggleHint">
+                            {dateViolationEnabled ? 'On' : 'Off'} • Abort after 10 invalid dates
+                          </div>
+                        </div>
+                        <label className="switch">
+                          <input
+                            type="checkbox"
+                            checked={dateViolationEnabled}
+                            onChange={(e) => setDateViolationEnabled(e.target.checked)}
+                          />
+                          <span className="switchSlider" />
+                        </label>
+                      </div>
+
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
                         <div>
                           <label className="label">Max Items</label>
@@ -3080,6 +3221,17 @@ export default function App() {
                               {stats.watchdogSucceeded} ok / {stats.watchdogFailed} fail / {stats.watchdogAborted} aborted
                             </span>
                           </div>
+                          <button
+                            className="btn btnSmall"
+                            type="button"
+                            style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
+                            onClick={() => downloadCsvSnapshot('watchdog', rows)}
+                            disabled={!rows.length}
+                            title="Download Watchdog export CSV"
+                          >
+                            <Download size={14} />
+                            Download CSV
+                          </button>
                         </div>
 
                         <div className="breakItem">
@@ -3090,6 +3242,17 @@ export default function App() {
                           <div className="breakLine" style={{ marginTop: 8 }}>
                             <span>Remaining</span> <span className="mono">{stats.afterDedup}</span>
                           </div>
+                          <button
+                            className="btn btnSmall"
+                            type="button"
+                            style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
+                            onClick={() => downloadCsvSnapshot('deduplicated', dedupRows)}
+                            disabled={!dedupRows.length}
+                            title="Download deduplicated CSV"
+                          >
+                            <Download size={14} />
+                            Download CSV
+                          </button>
                         </div>
 
                         <div className="breakItem">
@@ -3100,6 +3263,17 @@ export default function App() {
                           <div className="breakLine" style={{ marginTop: 8 }}>
                             <span>Remaining</span> <span className="mono">{stats.afterPurify}</span>
                           </div>
+                          <button
+                            className="btn btnSmall"
+                            type="button"
+                            style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
+                            onClick={() => downloadCsvSnapshot('purified', purifiedRows)}
+                            disabled={!purifiedRows.length}
+                            title="Download purified CSV"
+                          >
+                            <Download size={14} />
+                            Download CSV
+                          </button>
                         </div>
 
                         <div className="breakItem">
@@ -3110,6 +3284,17 @@ export default function App() {
                           <div className="breakLine" style={{ marginTop: 8 }}>
                             <span>Remaining</span> <span className="mono">{stats.afterMasterFilter}</span>
                           </div>
+                          <button
+                            className="btn btnSmall"
+                            type="button"
+                            style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
+                            onClick={() => downloadCsvSnapshot('master_filter', filteredRows)}
+                            disabled={!filteredRows.length}
+                            title="Download master filter CSV"
+                          >
+                            <Download size={14} />
+                            Download CSV
+                          </button>
                         </div>
 
                         <div className="breakItem">
