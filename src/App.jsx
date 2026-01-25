@@ -2025,7 +2025,9 @@ export default function App() {
 
     // Phase 1: Discover headers (double-pass strategy) — preserved
     const masterHeaders = new Set();
-    const SCHEMA_BATCH = 10;
+    const SCHEMA_BATCH = 2;
+    const SCHEMA_PAGE_SIZE = 25;
+    const SCHEMA_ITEM_LIMIT = 100;
 
     for (let i = 0; i < jobsWithData.length; i += SCHEMA_BATCH) {
       const batch = jobsWithData.slice(i, i + SCHEMA_BATCH);
@@ -2033,16 +2035,20 @@ export default function App() {
       await Promise.all(
         batch.map(async (job) => {
           try {
-            const res = await fetch(
-              `https://api.apify.com/v2/datasets/${job.datasetId}/items?token=${apiKey}&limit=100&clean=false`
-            );
-            if (!res.ok) return;
-            const items = await res.json();
-            if (Array.isArray(items) && items.length > 0) {
-              items.forEach((item) => {
-                const flattened = flattenRecord(item);
-                Object.keys(flattened).forEach((k) => masterHeaders.add(k));
-              });
+            for (let offset = 0; offset < SCHEMA_ITEM_LIMIT; offset += SCHEMA_PAGE_SIZE) {
+              if (stopRef.current) break;
+              const res = await fetch(
+                `https://api.apify.com/v2/datasets/${job.datasetId}/items?token=${apiKey}&limit=${SCHEMA_PAGE_SIZE}&offset=${offset}&clean=false`
+              );
+              if (!res.ok) break;
+              const items = await res.json();
+              if (Array.isArray(items) && items.length > 0) {
+                items.forEach((item) => {
+                  const flattened = flattenRecord(item);
+                  Object.keys(flattened).forEach((k) => masterHeaders.add(k));
+                });
+              }
+              if (!Array.isArray(items) || items.length < SCHEMA_PAGE_SIZE) break;
             }
           } catch {
             /* ignore */
@@ -2060,40 +2066,43 @@ export default function App() {
     addLog(`Watchdog Export: fetching datasets (${jobsWithData.length})...`, 'system');
 
     // Phase 2: Stream fetch (memory-safe pattern preserved; single CSV internal)
-    const DATA_BATCH = 5;
+    const DATA_BATCH = 2;
+    const DATA_PAGE_SIZE = 200;
     const allRows = [];
     let processedCount = 0;
 
     for (let i = 0; i < jobsWithData.length; i += DATA_BATCH) {
       const batch = jobsWithData.slice(i, i + DATA_BATCH);
 
-      const batchResults = await Promise.all(
-        batch.map(async (job) => {
-          try {
-            const res = await fetch(`https://api.apify.com/v2/datasets/${job.datasetId}/items?token=${apiKey}&clean=false`);
-            if (!res.ok) return null;
-            return { items: await res.json(), keyword: job.keyword };
-          } catch {
-            return null;
+      for (const job of batch) {
+        try {
+          for (let offset = 0; ; offset += DATA_PAGE_SIZE) {
+            if (stopRef.current) break;
+            const res = await fetch(
+              `https://api.apify.com/v2/datasets/${job.datasetId}/items?token=${apiKey}&clean=false&limit=${DATA_PAGE_SIZE}&offset=${offset}`
+            );
+            if (!res.ok) break;
+            const items = await res.json();
+            if (!Array.isArray(items) || items.length === 0) break;
+
+            for (const item of items) {
+              const rowObj = {};
+              // Inject keywords column (preserved)
+              const enriched = { ...item, keywords: job.keyword };
+              const flattened = flattenRecord(enriched);
+
+              for (const fieldName of exportedHeaders) {
+                const val = flattened[fieldName] ?? '';
+                rowObj[fieldName] = safeToString(val).replace(/\r?\n/g, ' ');
+              }
+
+              allRows.push(rowObj);
+            }
+
+            if (items.length < DATA_PAGE_SIZE) break;
           }
-        })
-      );
-
-      for (const result of batchResults) {
-        if (!result || !Array.isArray(result.items)) continue;
-
-        for (const item of result.items) {
-          const rowObj = {};
-          // Inject keywords column (preserved)
-          const enriched = { ...item, keywords: result.keyword };
-          const flattened = flattenRecord(enriched);
-
-          for (const fieldName of exportedHeaders) {
-            const val = flattened[fieldName] ?? '';
-            rowObj[fieldName] = safeToString(val).replace(/\r?\n/g, ' ');
-          }
-
-          allRows.push(rowObj);
+        } catch {
+          /* ignore */
         }
       }
 
