@@ -1695,7 +1695,7 @@ export default function App() {
           // C) dataset dates kill switch
           if (hasActualItems) {
             const latestItem = items[0];
-            const rawDate = latestItem.start_date || latestItem.startDate;
+            const rawDate = latestItem.start_date;
 
             let displayDate = rawDate;
             if (rawDate && (typeof rawDate === 'number' || !isNaN(Number(rawDate)))) {
@@ -1709,7 +1709,7 @@ export default function App() {
             const cutoffTime = new Date(watchdogMinDate).getTime();
 
             const offender = items.find((item) => {
-              const itemDateRaw = item.start_date || item.startDate;
+              const itemDateRaw = item.start_date;
               if (!itemDateRaw) return false;
 
               let itemTime;
@@ -1731,7 +1731,7 @@ export default function App() {
             });
 
             if (offender) {
-              const offenderDate = offender.start_date || offender.startDate;
+              const offenderDate = offender.start_date;
               await abortWatchdogJob(job, `Date Violation: ${offenderDate}`);
             }
           }
