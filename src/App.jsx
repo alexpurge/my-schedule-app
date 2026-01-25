@@ -1783,6 +1783,37 @@ export default function App() {
     setWatchdogExportStatus('Analyzing schema...');
     addLog('Watchdog Export: analyzing schema...', 'system');
 
+    const flattenWatchdogItem = (value, prefix = '', out = {}) => {
+      if (Array.isArray(value)) {
+        value.forEach((entry, index) => {
+          const nextPrefix = prefix ? `${prefix}/${index}` : `${index}`;
+          flattenWatchdogItem(entry, nextPrefix, out);
+        });
+        if (value.length === 0 && prefix) {
+          out[prefix] = '';
+        }
+        return out;
+      }
+
+      if (value && typeof value === 'object') {
+        const entries = Object.entries(value);
+        if (entries.length === 0 && prefix) {
+          out[prefix] = '';
+          return out;
+        }
+        entries.forEach(([key, entryValue]) => {
+          const nextPrefix = prefix ? `${prefix}/${key}` : key;
+          flattenWatchdogItem(entryValue, nextPrefix, out);
+        });
+        return out;
+      }
+
+      if (prefix) {
+        out[prefix] = value ?? '';
+      }
+      return out;
+    };
+
     const jobsWithData = finalJobs.filter((j) => j.datasetId);
     if (jobsWithData.length === 0) {
       setWatchdogExporting(false);
@@ -1801,12 +1832,15 @@ export default function App() {
         batch.map(async (job) => {
           try {
             const res = await fetch(
-              `https://api.apify.com/v2/datasets/${job.datasetId}/items?token=${apiKey}&limit=1&clean=true`
+              `https://api.apify.com/v2/datasets/${job.datasetId}/items?token=${apiKey}&limit=100&clean=false`
             );
             if (!res.ok) return;
             const items = await res.json();
             if (Array.isArray(items) && items.length > 0) {
-              Object.keys(items[0]).forEach((k) => masterHeaders.add(k));
+              items.forEach((item) => {
+                const flat = flattenWatchdogItem(item);
+                Object.keys(flat).forEach((k) => masterHeaders.add(k));
+              });
             }
           } catch {
             /* ignore */
@@ -1834,7 +1868,7 @@ export default function App() {
       const batchResults = await Promise.all(
         batch.map(async (job) => {
           try {
-            const res = await fetch(`https://api.apify.com/v2/datasets/${job.datasetId}/items?token=${apiKey}&clean=true`);
+            const res = await fetch(`https://api.apify.com/v2/datasets/${job.datasetId}/items?token=${apiKey}&clean=false`);
             if (!res.ok) return null;
             return { items: await res.json(), keyword: job.keyword };
           } catch {
@@ -1850,9 +1884,10 @@ export default function App() {
           const rowObj = {};
           // Inject keywords column (preserved)
           const enriched = { ...item, keywords: result.keyword };
+          const flattened = flattenWatchdogItem(enriched);
 
           for (const fieldName of exportedHeaders) {
-            let val = enriched[fieldName] ?? '';
+            let val = flattened[fieldName] ?? '';
             if (typeof val === 'object') val = JSON.stringify(val);
             rowObj[fieldName] = String(val).replace(/\r?\n/g, ' ');
           }
