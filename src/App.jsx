@@ -14,6 +14,8 @@ import {
   X,
   Settings,
   Square,
+  Moon,
+  Sun,
 } from 'lucide-react';
 
 /**
@@ -120,7 +122,7 @@ input:-webkit-autofill:active{
 }
 
 .brand{
-  height: 64px;
+  height: 72px;
   display:flex;
   align-items:center;
   gap: 10px;
@@ -128,9 +130,9 @@ input:-webkit-autofill:active{
   border-bottom: 1px solid var(--border-color);
 }
 .brandLogo{
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
   display:flex;
   align-items:center;
   justify-content:center;
@@ -142,9 +144,19 @@ input:-webkit-autofill:active{
   object-fit: contain;
 }
 .brandTitle{
-  font-weight: 900;
+  font-weight: 800;
   letter-spacing: -0.02em;
-  font-size: 15px;
+  font-size: 18px;
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.brandTitleStrong{
+  font-weight: 900;
+}
+.brandTitleLight{
+  font-weight: 600;
+  color: var(--text-subtle);
 }
 .brandSub{
   color: var(--text-subtle);
@@ -2513,7 +2525,10 @@ export default function App() {
               alt="Purge Digital logo"
             />
           </div>
-          <div className="brandTitle">Purge Digital</div>
+          <div className="brandTitle">
+            <span className="brandTitleStrong">Purge</span>
+            <span className="brandTitleLight">Digital</span>
+          </div>
         </div>
 
         <div className="nav">
@@ -2551,7 +2566,7 @@ export default function App() {
               onClick={() => setTheme((t) => (t === 'dark' ? 'light' : 'dark'))}
               title={theme === 'dark' ? 'Switch to Light Mode' : 'Switch to Dark Mode'}
             >
-              {theme === 'dark' ? '☀' : '☾'}
+              {theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}
             </button>
           </div>
         </div>
@@ -2820,9 +2835,6 @@ export default function App() {
                             }}
                             disabled={isRunning}
                           />
-                          <div className="smallNote" style={{ marginTop: 10 }}>
-                            <b>Note:</b> Max 100 simultaneous runs (same as Watchdog app).
-                          </div>
                         </div>
                       </div>
 
@@ -2853,18 +2865,6 @@ export default function App() {
                         </div>
                       </div>
 
-                      <div style={{ marginTop: 14 }}>
-                        <label className="label">Actor ID (Advanced)</label>
-                        <input
-                          className="input"
-                          value={watchdogActorId}
-                          onChange={(e) => setWatchdogActorId(e.target.value)}
-                          disabled={isRunning}
-                        />
-                        <div className="smallNote">
-                          Default: <span className="mono">{WATCHDOG_DEFAULT_ACTOR_ID}</span>
-                        </div>
-                      </div>
                     </div>
                   </div>
 
