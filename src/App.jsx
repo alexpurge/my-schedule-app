@@ -1597,21 +1597,83 @@ export default function App() {
    *  WATCHDOG: MANUAL ABORT (FUNCTIONALITY PRESERVED)
    * ============================================================
    */
+  const waitForWatchdogFinalStatus = useCallback(
+    async (runId, apiKey, { timeoutMs = 20000, intervalMs = 1500 } = {}) => {
+      const startedAt = Date.now();
+      let lastStatus = null;
+
+      while (Date.now() - startedAt < timeoutMs) {
+        try {
+          const statusRes = await fetch(`https://api.apify.com/v2/acts/${watchdogActorId}/runs/${runId}?token=${apiKey}`);
+          if (statusRes.ok) {
+            const statusData = await statusRes.json();
+            const status = statusData?.data?.status || null;
+            lastStatus = status;
+            if (['ABORTED', 'FAILED', 'SUCCEEDED'].includes(status)) {
+              return status;
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+
+        await sleep(intervalMs);
+      }
+
+      return lastStatus;
+    },
+    [watchdogActorId]
+  );
+
   const abortWatchdogJob = useCallback(
     async (job, reason) => {
       if (!job?.runId) return;
+      const apiKey = apiToken.trim();
+      if (!apiKey) return;
+      let finalStatus = null;
+
       try {
-        await fetch(`https://api.apify.com/v2/acts/${watchdogActorId}/runs/${job.runId}/abort?token=${apiToken}`, {
-          method: 'POST',
-        });
-        updateWatchdogJob(job.id, { status: 'ABORTED', failReason: reason });
-        addLog(`[WATCHDOG ABORT] "${job.keyword}" - ${reason}`, 'error');
+        const maxAttempts = 3;
+
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          await fetch(`https://api.apify.com/v2/acts/${watchdogActorId}/runs/${job.runId}/abort?token=${apiKey}`, {
+            method: 'POST',
+          });
+
+          finalStatus = await waitForWatchdogFinalStatus(job.runId, apiKey, {
+            timeoutMs: 20000,
+            intervalMs: 1500,
+          });
+
+          if (finalStatus === 'ABORTED' || finalStatus === 'FAILED' || finalStatus === 'SUCCEEDED') {
+            break;
+          }
+
+          await sleep(1000);
+        }
+
+        if (finalStatus === 'ABORTED') {
+          updateWatchdogJob(job.id, { status: 'ABORTED', failReason: reason });
+          addLog(`[WATCHDOG ABORT] "${job.keyword}" - ${reason}`, 'error');
+          return;
+        }
+
+        if (finalStatus === 'FAILED' || finalStatus === 'SUCCEEDED') {
+          updateWatchdogJob(job.id, { status: finalStatus });
+          addLog(
+            `[WATCHDOG] Abort requested for "${job.keyword}", but run finished with status: ${finalStatus}.`,
+            'warning'
+          );
+          return;
+        }
+
+        addLog(`[WATCHDOG] Abort requested for "${job.keyword}", but confirmation timed out.`, 'warning');
       } catch (e) {
         // Preserve original behaviour: ignore abort failure silently, but we can log a warning safely
         addLog(`[WATCHDOG] Abort failed for "${job.keyword}".`, 'warning');
       }
     },
-    [addLog, apiToken, updateWatchdogJob, watchdogActorId]
+    [addLog, apiToken, updateWatchdogJob, waitForWatchdogFinalStatus, watchdogActorId]
   );
 
   /**
