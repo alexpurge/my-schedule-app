@@ -1801,12 +1801,14 @@ export default function App() {
         batch.map(async (job) => {
           try {
             const res = await fetch(
-              `https://api.apify.com/v2/datasets/${job.datasetId}/items?token=${apiKey}&limit=1&clean=true`
+              `https://api.apify.com/v2/datasets/${job.datasetId}/items?token=${apiKey}&limit=100&clean=false`
             );
             if (!res.ok) return;
             const items = await res.json();
             if (Array.isArray(items) && items.length > 0) {
-              Object.keys(items[0]).forEach((k) => masterHeaders.add(k));
+              items.forEach((item) => {
+                Object.keys(item).forEach((k) => masterHeaders.add(k));
+              });
             }
           } catch {
             /* ignore */
@@ -1834,7 +1836,7 @@ export default function App() {
       const batchResults = await Promise.all(
         batch.map(async (job) => {
           try {
-            const res = await fetch(`https://api.apify.com/v2/datasets/${job.datasetId}/items?token=${apiKey}&clean=true`);
+            const res = await fetch(`https://api.apify.com/v2/datasets/${job.datasetId}/items?token=${apiKey}&clean=false`);
             if (!res.ok) return null;
             return { items: await res.json(), keyword: job.keyword };
           } catch {
