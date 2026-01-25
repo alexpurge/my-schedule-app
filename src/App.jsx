@@ -1694,44 +1694,64 @@ export default function App() {
 
           // C) dataset dates kill switch
           if (hasActualItems) {
-            const latestItem = items[0];
-            const rawDate = latestItem.start_date;
+            const parseStartDateValue = (raw) => {
+              if (raw === null || raw === undefined || raw === '') return { time: null, display: '' };
+              const rawString = String(raw).trim();
+              if (!rawString) return { time: null, display: '' };
 
-            let displayDate = rawDate;
-            if (rawDate && (typeof rawDate === 'number' || !isNaN(Number(rawDate)))) {
-              let ts = Number(rawDate);
-              if (ts < 100000000000) ts *= 1000;
-              displayDate = new Date(ts).toISOString().split('T')[0];
-            }
+              const numericOnly = /^\d+$/.test(rawString);
+              if (numericOnly) {
+                if (rawString.length === 13) {
+                  const ts = Number(rawString);
+                  return { time: ts, display: new Date(ts).toISOString().split('T')[0] };
+                }
+                if (rawString.length === 10) {
+                  const ts = Number(rawString) * 1000;
+                  return { time: ts, display: new Date(ts).toISOString().split('T')[0] };
+                }
+                if (rawString.length === 8) {
+                  const year = rawString.slice(0, 4);
+                  const month = rawString.slice(4, 6);
+                  const day = rawString.slice(6, 8);
+                  const isoDate = `${year}-${month}-${day}`;
+                  const parsed = Date.parse(isoDate);
+                  if (!isNaN(parsed)) {
+                    return { time: parsed, display: isoDate };
+                  }
+                }
+
+                const numericValue = Number(rawString);
+                if (!isNaN(numericValue)) {
+                  const ts = numericValue > 100000000000 ? numericValue : numericValue * 1000;
+                  return { time: ts, display: new Date(ts).toISOString().split('T')[0] };
+                }
+              }
+
+              const parsed = Date.parse(rawString);
+              if (!isNaN(parsed)) {
+                return { time: parsed, display: new Date(parsed).toISOString().split('T')[0] };
+              }
+
+              return { time: null, display: '' };
+            };
+
+            const latestItem = items[0];
+            const { display: displayDate } = parseStartDateValue(latestItem?.start_date);
 
             updateWatchdogJob(job.id, { lastDate: displayDate });
 
             const cutoffTime = new Date(watchdogMinDate).getTime();
 
             const offender = items.find((item) => {
-              const itemDateRaw = item.start_date;
-              if (!itemDateRaw) return false;
-
-              let itemTime;
-              const isNumeric =
-                !isNaN(itemDateRaw) &&
-                !isNaN(parseFloat(itemDateRaw)) &&
-                String(itemDateRaw).match(/^\d+(\.\d+)?$/);
-
-              if (isNumeric) {
-                let ts = parseFloat(itemDateRaw);
-                if (ts < 100000000000) ts *= 1000;
-                itemTime = ts;
-              } else {
-                itemTime = new Date(itemDateRaw).getTime();
-              }
+              const { time: itemTime } = parseStartDateValue(item.start_date);
+              if (!itemTime) return false;
 
               if (isNaN(itemTime) || isNaN(cutoffTime)) return false;
               return itemTime < cutoffTime;
             });
 
             if (offender) {
-              const offenderDate = offender.start_date;
+              const { display: offenderDate } = parseStartDateValue(offender.start_date);
               await abortWatchdogJob(job, `Date Violation: ${offenderDate}`);
             }
           }
