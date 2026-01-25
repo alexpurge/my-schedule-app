@@ -863,7 +863,7 @@ input:-webkit-autofill:active{
   />
 );
 
-const DATE_VIOLATION_STREAK_LIMIT = 5;
+const DEFAULT_DATE_VIOLATION_STREAK_LIMIT = 5;
 
 /**
  * ============================================================
@@ -1384,6 +1384,7 @@ export default function App() {
   const [watchdogMaxRuntime, setWatchdogMaxRuntime] = useState('');
   const [watchdogMaxConcurrency, setWatchdogMaxConcurrency] = useState(5);
   const [dateViolationEnabled, setDateViolationEnabled] = useState(true);
+  const [dateViolationStreakLimit, setDateViolationStreakLimit] = useState(DEFAULT_DATE_VIOLATION_STREAK_LIMIT);
 
   const [watchdogJobs, setWatchdogJobs] = useState([]);
   const watchdogJobsRef = useRef([]);
@@ -1868,7 +1869,8 @@ export default function App() {
                 const { display: offenderDate } = parseStartDateValue(offender.start_date);
                 updateWatchdogJob(job.id, { dateViolationStreak: nextStreak });
 
-                if (nextStreak >= DATE_VIOLATION_STREAK_LIMIT) {
+                const safeStreakLimit = Math.max(1, Number(dateViolationStreakLimit) || 1);
+                if (nextStreak >= safeStreakLimit) {
                   await abortWatchdogJob(job, `Date Violation: ${offenderDate}`);
                 }
               } else if (job.dateViolationStreak) {
@@ -2068,6 +2070,7 @@ export default function App() {
     apiToken,
     customProxy,
     dateViolationEnabled,
+    dateViolationStreakLimit,
     memory,
     setWatchdogJobsSafe,
     updateWatchdogJob,
@@ -2997,7 +3000,7 @@ export default function App() {
                         <div className="toggleMeta">
                           <div className="toggleLabel">Date Violation Guard</div>
                           <div className="toggleHint">
-                            {dateViolationEnabled ? 'On' : 'Off'} • Abort after {DATE_VIOLATION_STREAK_LIMIT} consecutive
+                            {dateViolationEnabled ? 'On' : 'Off'} • Abort after {dateViolationStreakLimit} consecutive
                             day-before-minimum dates
                           </div>
                         </div>
@@ -3009,6 +3012,29 @@ export default function App() {
                           />
                           <span className="switchSlider" />
                         </label>
+                      </div>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
+                        <div>
+                          <label className="label">Abort After X Consecutive Days</label>
+                          <input
+                            className="input"
+                            type="number"
+                            min="1"
+                            step="1"
+                            value={dateViolationStreakLimit}
+                            onChange={(e) => {
+                              const nextValue = Number(e.target.value);
+                              if (!Number.isFinite(nextValue)) {
+                                setDateViolationStreakLimit(DEFAULT_DATE_VIOLATION_STREAK_LIMIT);
+                                return;
+                              }
+                              setDateViolationStreakLimit(Math.max(1, Math.floor(nextValue)));
+                            }}
+                            disabled={isRunning}
+                          />
+                        </div>
+                        <div />
                       </div>
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
