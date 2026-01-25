@@ -1016,6 +1016,32 @@ const safeToString = (v) => {
   }
 };
 
+const flattenRecord = (value, prefix = '', out = {}) => {
+  if (value === null || value === undefined) {
+    if (prefix) out[prefix] = '';
+    return out;
+  }
+
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => {
+      const nextPrefix = prefix ? `${prefix}/${index}` : String(index);
+      flattenRecord(item, nextPrefix, out);
+    });
+    return out;
+  }
+
+  if (typeof value === 'object') {
+    Object.entries(value).forEach(([key, item]) => {
+      const nextPrefix = prefix ? `${prefix}/${key}` : key;
+      flattenRecord(item, nextPrefix, out);
+    });
+    return out;
+  }
+
+  if (prefix) out[prefix] = value;
+  return out;
+};
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
@@ -1807,7 +1833,8 @@ export default function App() {
             const items = await res.json();
             if (Array.isArray(items) && items.length > 0) {
               items.forEach((item) => {
-                Object.keys(item).forEach((k) => masterHeaders.add(k));
+                const flattened = flattenRecord(item);
+                Object.keys(flattened).forEach((k) => masterHeaders.add(k));
               });
             }
           } catch {
@@ -1852,11 +1879,11 @@ export default function App() {
           const rowObj = {};
           // Inject keywords column (preserved)
           const enriched = { ...item, keywords: result.keyword };
+          const flattened = flattenRecord(enriched);
 
           for (const fieldName of exportedHeaders) {
-            let val = enriched[fieldName] ?? '';
-            if (typeof val === 'object') val = JSON.stringify(val);
-            rowObj[fieldName] = String(val).replace(/\r?\n/g, ' ');
+            const val = flattened[fieldName] ?? '';
+            rowObj[fieldName] = safeToString(val).replace(/\r?\n/g, ' ');
           }
 
           allRows.push(rowObj);
