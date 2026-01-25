@@ -1751,8 +1751,15 @@ export default function App() {
             });
 
             if (offender) {
+              const nextStreak = (job.dateViolationStreak || 0) + 1;
               const { display: offenderDate } = parseStartDateValue(offender.start_date);
-              await abortWatchdogJob(job, `Date Violation: ${offenderDate}`);
+              updateWatchdogJob(job.id, { dateViolationStreak: nextStreak });
+
+              if (nextStreak >= 10) {
+                await abortWatchdogJob(job, `Date Violation: ${offenderDate}`);
+              }
+            } else if (job.dateViolationStreak) {
+              updateWatchdogJob(job.id, { dateViolationStreak: 0 });
             }
           }
         } catch (e) {
