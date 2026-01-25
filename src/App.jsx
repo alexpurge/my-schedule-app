@@ -863,7 +863,7 @@ input:-webkit-autofill:active{
   />
 );
 
-const DATE_VIOLATION_STREAK_LIMIT = 50;
+const DATE_VIOLATION_STREAK_LIMIT = 5;
 
 /**
  * ============================================================
@@ -1853,14 +1853,14 @@ export default function App() {
             updateWatchdogJob(job.id, { lastDate: displayDate });
 
             if (dateViolationEnabled) {
-              const cutoffTime = new Date(watchdogMinDate).getTime();
+              const minimumDate = new Date(watchdogMinDate);
+              minimumDate.setDate(minimumDate.getDate() - 1);
+              const targetDate = minimumDate.toISOString().split('T')[0];
 
               const offender = items.find((item) => {
-                const { time: itemTime } = parseStartDateValue(item.start_date);
-                if (!itemTime) return false;
-
-                if (isNaN(itemTime) || isNaN(cutoffTime)) return false;
-                return itemTime < cutoffTime;
+                const { display: itemDate } = parseStartDateValue(item.start_date);
+                if (!itemDate) return false;
+                return itemDate === targetDate;
               });
 
               if (offender) {
@@ -2998,7 +2998,7 @@ export default function App() {
                           <div className="toggleLabel">Date Violation Guard</div>
                           <div className="toggleHint">
                             {dateViolationEnabled ? 'On' : 'Off'} • Abort after {DATE_VIOLATION_STREAK_LIMIT} consecutive
-                            invalid dates
+                            day-before-minimum dates
                           </div>
                         </div>
                         <label className="switch">
