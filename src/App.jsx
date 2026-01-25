@@ -130,14 +130,16 @@ input:-webkit-autofill:active{
 .brandLogo{
   width: 34px;
   height: 34px;
-  border-radius: 12px;
-  background: rgba(249,115,22,.12);
-  border: 1px solid rgba(249,115,22,.25);
+  border-radius: 10px;
   display:flex;
   align-items:center;
   justify-content:center;
-  color: var(--color-primary);
-  box-shadow: 0 0 14px rgba(249,115,22,.12);
+  background: transparent;
+}
+.brandLogoImage{
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 .brandTitle{
   font-weight: 900;
@@ -2504,12 +2506,14 @@ export default function App() {
       {/* SIDEBAR */}
       <aside className="sidebar">
         <div className="brand">
-          <div className="brandLogo" title="Pipeline">
-            <Layers size={18} />
+          <div className="brandLogo" title="Purge Digital">
+            <img
+              className="brandLogoImage"
+              src="https://i.imgur.com/QjjDjuU.png"
+              alt="Purge Digital logo"
+            />
           </div>
-          <div className="brandTitle">
-            PIPELINE<span className="brandSub">.LOCAL</span>
-          </div>
+          <div className="brandTitle">Purge Digital</div>
         </div>
 
         <div className="nav">
