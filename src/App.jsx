@@ -863,6 +863,8 @@ input:-webkit-autofill:active{
   />
 );
 
+const DATE_VIOLATION_STREAK_LIMIT = 50;
+
 /**
  * ============================================================
  *  HARD-CODED MASTER FILTER KEYWORDS (ONE PER LINE)
@@ -1866,7 +1868,7 @@ export default function App() {
                 const { display: offenderDate } = parseStartDateValue(offender.start_date);
                 updateWatchdogJob(job.id, { dateViolationStreak: nextStreak });
 
-                if (nextStreak >= 10) {
+                if (nextStreak >= DATE_VIOLATION_STREAK_LIMIT) {
                   await abortWatchdogJob(job, `Date Violation: ${offenderDate}`);
                 }
               } else if (job.dateViolationStreak) {
@@ -2995,7 +2997,8 @@ export default function App() {
                         <div className="toggleMeta">
                           <div className="toggleLabel">Date Violation Guard</div>
                           <div className="toggleHint">
-                            {dateViolationEnabled ? 'On' : 'Off'} • Abort after 10 invalid dates
+                            {dateViolationEnabled ? 'On' : 'Off'} • Abort after {DATE_VIOLATION_STREAK_LIMIT} consecutive
+                            invalid dates
                           </div>
                         </div>
                         <label className="switch">
