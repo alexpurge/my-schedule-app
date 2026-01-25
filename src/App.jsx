@@ -146,7 +146,7 @@ input:-webkit-autofill:active{
 .brandTitle{
   font-weight: 800;
   letter-spacing: -0.02em;
-  font-size: 18px;
+  font-size: 27px;
   display: inline-flex;
   align-items: baseline;
   gap: 6px;
@@ -1183,78 +1183,233 @@ const escapeXml = (unsafe) =>
     .replace(/\n/g, '&#10;')
     .replace(/\r/g, '&#10;');
 
-const buildExcelXmlWorkbook = ({ sheets, headers, fileBaseName }) => {
-  const xmlHeader = `<?xml version="1.0"?>\n<?mso-application progid="Excel.Sheet"?>`;
+const columnLetter = (index) => {
+  let column = '';
+  let n = index + 1;
+  while (n > 0) {
+    const rem = (n - 1) % 26;
+    column = String.fromCharCode(65 + rem) + column;
+    n = Math.floor((n - 1) / 26);
+  }
+  return column;
+};
 
-  const styles = `
-    <Styles>
-      <Style ss:ID="Default" ss:Name="Normal">
-        <Alignment ss:Vertical="Bottom"/>
-        <Borders/>
-        <Font/>
-        <Interior/>
-        <NumberFormat/>
-        <Protection/>
-      </Style>
-      <Style ss:ID="sHeader">
-        <Font ss:Bold="1"/>
-        <Interior ss:Color="#E5E7EB" ss:Pattern="Solid"/>
-      </Style>
-    </Styles>
-  `.trim();
-
-  const worksheetXml = sheets
-    .map(({ name, rows }) => {
-      const sheetName = sanitizeSheetName(name);
-
-      const headerRow =
-        `<Row>` +
-        headers
-          .map((h) => `<Cell ss:StyleID="sHeader"><Data ss:Type="String">${escapeXml(h)}</Data></Cell>`)
-          .join('') +
-        `</Row>`;
-
-      const bodyRows = rows
-        .map((row) => {
-          const cells = headers
-            .map((h) => `<Cell><Data ss:Type="String">${escapeXml(safeToString(row[h]))}</Data></Cell>`)
-            .join('');
-          return `<Row>${cells}</Row>`;
+const buildWorksheetXml = (headers, rows) => {
+  const allRows = [
+    headers,
+    ...rows.map((row) => headers.map((header) => safeToString(row[header]))),
+  ];
+  const rowXml = allRows
+    .map((row, rowIndex) => {
+      const cells = row
+        .map((value, colIndex) => {
+          const cellRef = `${columnLetter(colIndex)}${rowIndex + 1}`;
+          const safeValue = escapeXml(safeToString(value));
+          return `<c r="${cellRef}" t="inlineStr"><is><t>${safeValue}</t></is></c>`;
         })
         .join('');
-
-      return `
-        <Worksheet ss:Name="${escapeXml(sheetName)}">
-          <Table>
-            ${headerRow}
-            ${bodyRows}
-          </Table>
-        </Worksheet>
-      `.trim();
+      return `<row r="${rowIndex + 1}">${cells}</row>`;
     })
-    .join('\n');
+    .join('');
 
-  const workbook = `
-    <Workbook
-      xmlns="urn:schemas-microsoft-com:office:spreadsheet"
-      xmlns:o="urn:schemas-microsoft-com:office:office"
-      xmlns:x="urn:schemas-microsoft-com:office:excel"
-      xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"
-      xmlns:html="http://www.w3.org/TR/REC-html40"
-    >
-      <DocumentProperties xmlns="urn:schemas-microsoft-com:office:office">
-        <Author>Local Pipeline</Author>
-        <LastAuthor>Local Pipeline</LastAuthor>
-        <Created>${new Date().toISOString()}</Created>
-        <Company>${escapeXml(fileBaseName || 'Pipeline')}</Company>
-        <Version>16.00</Version>
-      </DocumentProperties>
-      ${styles}
-      ${worksheetXml}
-    </Workbook>
-  `.trim();
+  return [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
+    `<sheetData>${rowXml}</sheetData>`,
+    '</worksheet>',
+  ].join('');
+};
 
-  return `${xmlHeader}\n${workbook}`;
+const buildWorkbookXml = (sheetNames) => {
+  const sheetsXml = sheetNames
+    .map(
+      (name, index) =>
+        `<sheet name="${escapeXml(name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`
+    )
+    .join('');
+
+  return [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"',
+    ' xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">',
+    `<sheets>${sheetsXml}</sheets>`,
+    '</workbook>',
+  ].join('');
+};
+
+const buildWorkbookRelsXml = (sheetCount) => {
+  const relsXml = Array.from({ length: sheetCount })
+    .map(
+      (_, index) =>
+        `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
+    )
+    .join('');
+
+  return [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
+    relsXml,
+    '</Relationships>',
+  ].join('');
+};
+
+const buildRootRelsXml = () =>
+  [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
+    '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>',
+    '</Relationships>',
+  ].join('');
+
+const buildContentTypesXml = (sheetCount) => {
+  const sheetOverrides = Array.from({ length: sheetCount })
+    .map(
+      (_, index) =>
+        `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+    )
+    .join('');
+
+  return [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
+    '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
+    '<Default Extension="xml" ContentType="application/xml"/>',
+    '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>',
+    sheetOverrides,
+    '</Types>',
+  ].join('');
+};
+
+const getCrcTable = (() => {
+  let table = null;
+  return () => {
+    if (table) return table;
+    table = new Uint32Array(256);
+    for (let i = 0; i < 256; i += 1) {
+      let c = i;
+      for (let j = 0; j < 8; j += 1) {
+        c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+      }
+      table[i] = c >>> 0;
+    }
+    return table;
+  };
+})();
+
+const crc32 = (data) => {
+  const table = getCrcTable();
+  let crc = 0xffffffff;
+  data.forEach((byte) => {
+    const idx = (crc ^ byte) & 0xff;
+    crc = table[idx] ^ (crc >>> 8);
+  });
+  return (crc ^ 0xffffffff) >>> 0;
+};
+
+const toUint8Array = (value) => {
+  if (value instanceof Uint8Array) return value;
+  return new TextEncoder().encode(value);
+};
+
+const uint16LE = (num) => new Uint8Array([num & 0xff, (num >> 8) & 0xff]);
+const uint32LE = (num) =>
+  new Uint8Array([num & 0xff, (num >> 8) & 0xff, (num >> 16) & 0xff, (num >> 24) & 0xff]);
+
+const concatUint8 = (chunks) => {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const output = new Uint8Array(total);
+  let offset = 0;
+  chunks.forEach((chunk) => {
+    output.set(chunk, offset);
+    offset += chunk.length;
+  });
+  return output;
+};
+
+const createZip = (files) => {
+  const localParts = [];
+  const centralParts = [];
+  let offset = 0;
+
+  files.forEach(({ name, content }) => {
+    const nameBytes = toUint8Array(name);
+    const dataBytes = toUint8Array(content);
+    const crc = crc32(dataBytes);
+    const localHeader = concatUint8([
+      new Uint8Array([0x50, 0x4b, 0x03, 0x04]),
+      uint16LE(20),
+      uint16LE(0),
+      uint16LE(0),
+      uint16LE(0),
+      uint16LE(0),
+      uint32LE(crc),
+      uint32LE(dataBytes.length),
+      uint32LE(dataBytes.length),
+      uint16LE(nameBytes.length),
+      uint16LE(0),
+      nameBytes,
+    ]);
+
+    localParts.push(localHeader, dataBytes);
+
+    const centralHeader = concatUint8([
+      new Uint8Array([0x50, 0x4b, 0x01, 0x02]),
+      uint16LE(20),
+      uint16LE(20),
+      uint16LE(0),
+      uint16LE(0),
+      uint16LE(0),
+      uint16LE(0),
+      uint32LE(crc),
+      uint32LE(dataBytes.length),
+      uint32LE(dataBytes.length),
+      uint16LE(nameBytes.length),
+      uint16LE(0),
+      uint16LE(0),
+      uint16LE(0),
+      uint16LE(0),
+      uint32LE(0),
+      uint32LE(offset),
+      nameBytes,
+    ]);
+
+    centralParts.push(centralHeader);
+    offset += localHeader.length + dataBytes.length;
+  });
+
+  const centralDir = concatUint8(centralParts);
+  const endRecord = concatUint8([
+    new Uint8Array([0x50, 0x4b, 0x05, 0x06]),
+    uint16LE(0),
+    uint16LE(0),
+    uint16LE(files.length),
+    uint16LE(files.length),
+    uint32LE(centralDir.length),
+    uint32LE(offset),
+    uint16LE(0),
+  ]);
+
+  return concatUint8([...localParts, centralDir, endRecord]);
+};
+
+const buildXlsxFile = ({ sheets, headers }) => {
+  const normalizedSheets = sheets.map(({ name, rows }) => ({
+    name: sanitizeSheetName(name),
+    rows,
+  }));
+  const sheetNames = normalizedSheets.map((sheet) => sheet.name);
+  const files = [
+    { name: '[Content_Types].xml', content: buildContentTypesXml(normalizedSheets.length) },
+    { name: '_rels/.rels', content: buildRootRelsXml() },
+    { name: 'xl/workbook.xml', content: buildWorkbookXml(sheetNames) },
+    { name: 'xl/_rels/workbook.xml.rels', content: buildWorkbookRelsXml(normalizedSheets.length) },
+    ...normalizedSheets.map((sheet, index) => ({
+      name: `xl/worksheets/sheet${index + 1}.xml`,
+      content: buildWorksheetXml(headers, sheet.rows),
+    })),
+  ];
+
+  return createZip(files);
 };
 
 const downloadBlob = (blob, filename) => {
@@ -2701,11 +2856,13 @@ export default function App() {
   const downloadFinalSpreadsheet = useCallback(() => {
     if (!finalWorkbook) return;
 
-    const xml = buildExcelXmlWorkbook(finalWorkbook);
+    const xlsxData = buildXlsxFile(finalWorkbook);
     const date = new Date().toISOString().slice(0, 10);
-    const filename = `${finalWorkbook.fileBaseName || 'pipeline'}_Sorted_${date}.xls`;
+    const filename = `${finalWorkbook.fileBaseName || 'pipeline'}_Sorted_${date}.xlsx`;
 
-    const blob = new Blob([xml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
+    const blob = new Blob([xlsxData], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    });
     downloadBlob(blob, filename);
 
     addLog(`Downloaded: ${filename}`, 'success');
@@ -2796,7 +2953,7 @@ export default function App() {
             onClick={() => setActiveTab('dashboard')}
           >
             <Layers className="navIcon" />
-            <span className="navLabel">Dashboard</span>
+            <span className="navLabel">Filtration System</span>
           </button>
 
           <button
@@ -2834,7 +2991,7 @@ export default function App() {
         <header className="topHeader">
           <div className="headerLeft">
             <div className="headerTitle">
-              {activeTab === 'settings' ? 'Pipeline Settings' : 'Watchdog → Filter → Apify → AU Sorter'}
+              {activeTab === 'settings' ? 'Pipeline Settings' : 'Filtration System'}
             </div>
             <div className="headerSep" />
             <StatusPill stage={stage} isRunning={isRunning} />
@@ -3454,7 +3611,7 @@ export default function App() {
                         {finalWorkbook ? (
                           <>
                             <FileDown size={16} />
-                            Download Final Spreadsheet (.xls)
+                            Download Final Spreadsheet (.xlsx)
                           </>
                         ) : (
                           <>
