@@ -1840,6 +1840,8 @@ export default function App() {
       setProgress(35);
 
       const keywordColumn = 'keyword';
+      const keywordColumns = getKeywordColumns(allRows);
+      const keywordColumnsToUse = keywordColumns.length ? keywordColumns : [keywordColumn];
       const seen = new Set();
       const deduped = [];
       const dedupedMap = new Map();
@@ -1849,15 +1851,17 @@ export default function App() {
       for (const row of allRows) {
         if (stopRef.current) throw new Error('Stopped by user.');
         const key = safeToString(row[dedupColumn]).trim();
-        const rowKeyword = safeToString(row[keywordColumn]).trim();
+        const rowKeywords = extractKeywordsFromRow(row, keywordColumnsToUse);
         if (seen.has(key)) {
           dupRemoved++;
           const existing = dedupedMap.get(key);
-          if (existing && rowKeyword) existing.keywords.add(rowKeyword);
+          if (existing && rowKeywords.length) {
+            rowKeywords.forEach((keyword) => existing.keywords.add(keyword));
+          }
         } else {
           seen.add(key);
           const keywordSet = new Set();
-          if (rowKeyword) keywordSet.add(rowKeyword);
+          rowKeywords.forEach((keyword) => keywordSet.add(keyword));
           dedupedMap.set(key, { row: { ...row }, keywords: keywordSet });
         }
       }
