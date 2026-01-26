@@ -853,7 +853,7 @@ transform: scale(1.5);
   .dashboardLayout{
     grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
     min-height: calc(100vh - 260px);
-    --dashboard-panel-overlap: 16px;
+    --dashboard-panel-overlap: 20%;
   }
 
   .dashboardPanel{
