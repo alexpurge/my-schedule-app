@@ -811,8 +811,7 @@ export default function App() {
     [requestSheetsAccessToken, sheetsAccessToken, sheetsAccessTokenExpiresAt]
   );
 
-  const initialScopesRequestedRef = useRef(false);
-  const loginTokenRequestRef = useRef(null);
+  const loginTokenRequestRef = useRef(false);
 
   const handleGoogleCredential = useCallback(
     async (response) => {
@@ -837,14 +836,14 @@ export default function App() {
         setAuthUser(data.name || data.email || null);
         try {
           if (loginTokenRequestRef.current) {
-            await loginTokenRequestRef.current;
-          } else {
             await ensureSheetsAccessToken('consent');
+          } else {
+            await ensureSheetsAccessToken('');
           }
         } catch (error) {
           console.warn('Google Sheets permissions not granted on login.', error);
         } finally {
-          loginTokenRequestRef.current = null;
+          loginTokenRequestRef.current = false;
         }
       } catch (err) {
         setAuthState({
@@ -876,17 +875,6 @@ export default function App() {
     setGoogleReady(true);
   }, [authState.authenticated, googleClientId, googleScriptReady, handleGoogleCredential]);
 
-  useEffect(() => {
-    if (!authState.authenticated) {
-      initialScopesRequestedRef.current = false;
-      return;
-    }
-    if (initialScopesRequestedRef.current) return;
-    if (!googleScriptReady || !sheetsTokenClientReady) return;
-    initialScopesRequestedRef.current = true;
-    ensureSheetsAccessToken('consent').catch(() => {});
-  }, [authState.authenticated, ensureSheetsAccessToken, googleScriptReady, sheetsTokenClientReady]);
-
   const handleLoginClick = useCallback(() => {
     if (!googleReady) {
       setAuthState((prev) => ({
@@ -914,14 +902,7 @@ export default function App() {
       return;
     }
     setAuthState((prev) => ({ ...prev, loading: true, error: null }));
-    loginTokenRequestRef.current = requestSheetsAccessToken('consent');
-    loginTokenRequestRef.current.catch((error) => {
-      setAuthState((prev) => ({
-        ...prev,
-        loading: false,
-        error: error instanceof Error ? error.message : 'Google Sheets authorization failed.',
-      }));
-    });
+    loginTokenRequestRef.current = true;
     google.accounts.id.prompt((notification) => {
       if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
         setAuthState((prev) => ({
@@ -931,7 +912,7 @@ export default function App() {
         }));
       }
     });
-  }, [googleReady, requestSheetsAccessToken, sheetsTokenClientReady]);
+  }, [googleReady, sheetsTokenClientReady]);
 
   /**
    * ============================================================
@@ -3135,6 +3116,26 @@ export default function App() {
             aria-label="Sign in with Google"
             disabled={authState.loading}
           >
+            <span className="authGoogleButtonIcon" aria-hidden="true">
+              <svg viewBox="0 0 48 48" focusable="false" aria-hidden="true">
+                <path
+                  fill="#4285F4"
+                  d="M24 9.5c3.23 0 6.06 1.12 8.32 2.97l6.2-6.2C34.7 2.52 29.7 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.21 5.6C11.6 13.01 17.35 9.5 24 9.5z"
+                />
+                <path
+                  fill="#34A853"
+                  d="M46.5 24.5c0-1.67-.15-2.9-.48-4.18H24v7.92h12.76c-.52 2.92-2.16 5.3-4.6 6.98l7.06 5.47c4.12-3.8 6.28-9.4 6.28-16.19z"
+                />
+                <path
+                  fill="#FBBC05"
+                  d="M9.77 28.82a14.5 14.5 0 0 1 0-9.64l-7.2-5.6C.92 16.95 0 20.38 0 24c0 3.62.92 7.05 2.57 10.42l7.2-5.6z"
+                />
+                <path
+                  fill="#EA4335"
+                  d="M24 48c5.7 0 10.48-1.88 13.98-5.11l-7.06-5.47c-1.94 1.3-4.43 2.07-6.92 2.07-6.65 0-12.4-3.51-14.23-8.32l-7.21 5.6C6.5 42.62 14.62 48 24 48z"
+                />
+              </svg>
+            </span>
             <span className="authGoogleButtonLabel">Sign in with Google</span>
           </button>
         </div>

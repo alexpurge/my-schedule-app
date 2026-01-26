@@ -209,44 +209,55 @@ input:-webkit-autofill:active{
   position: relative;
   transform: none;
   width: min(320px, 90vw);
-  min-height: 64px;
-  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border-color));
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--bg-card) 80%, #000);
+  min-height: 40px;
+  border: 1px solid #dadce0;
+  border-radius: 4px;
+  background: #fff;
   cursor: pointer;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  color: var(--text);
-  font-weight: 600;
-  padding: 10px 20px;
+  gap: 12px;
+  color: #3c4043;
+  font-family: "Roboto", "Helvetica Neue", Arial, sans-serif;
+  font-weight: 500;
+  padding: 10px 16px;
   text-align: center;
-  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
+  transition: background-color 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
 }
 
 .authGoogleButton:hover{
-  transform: translateY(-1px);
-  border-color: color-mix(in srgb, var(--accent) 65%, var(--border-color));
-  box-shadow: 0 12px 30px -18px color-mix(in srgb, var(--accent) 50%, transparent);
+  background-color: #f8f9fa;
+  border-color: #dadce0;
+  box-shadow: 0 1px 2px rgba(60, 64, 67, 0.3), 0 1px 3px rgba(60, 64, 67, 0.15);
 }
 
 .authGoogleButton:disabled{
   cursor: not-allowed;
-  opacity: 0.6;
-  transform: none;
+  opacity: 0.7;
   box-shadow: none;
 }
 
 .authGoogleButton:focus-visible{
-  outline: 2px solid color-mix(in srgb, var(--accent) 65%, #fff);
-  outline-offset: 4px;
+  outline: 2px solid #4285f4;
+  outline-offset: 2px;
+}
+
+.authGoogleButtonIcon{
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+}
+
+.authGoogleButtonIcon svg{
+  width: 100%;
+  height: 100%;
 }
 
 .authGoogleButtonLabel{
-  font-size: 15px;
-  letter-spacing: -0.01em;
+  font-size: 14px;
+  letter-spacing: 0.2px;
 }
 
 .authGoogleButtonMeta{
