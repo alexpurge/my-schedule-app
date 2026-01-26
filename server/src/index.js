@@ -297,6 +297,9 @@ app.get("/sheets/recent", async (req, res) => {
       query: {
         q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
         orderBy: "modifiedTime desc",
+        includeItemsFromAllDrives: true,
+        supportsAllDrives: true,
+        corpora: "allDrives",
         pageSize: limit,
         fields: "files(id,name,modifiedTime,webViewLink)",
       },
