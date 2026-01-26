@@ -136,8 +136,8 @@ input:-webkit-autofill:active{
 
 .authLoginStack{
   position: absolute;
-  left: clamp(120px, 18vw, 260px);
-  top: clamp(360px, 56vh, 520px);
+  left: clamp(132px, 19vw, 280px);
+  top: clamp(376px, 57vh, 540px);
   transform: none;
   display: flex;
   flex-direction: column;
