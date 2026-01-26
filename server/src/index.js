@@ -9,8 +9,9 @@ import { OAuth2Client } from "google-auth-library";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-dotenv.config({ path: path.resolve(__dirname, "../../.env") });
-dotenv.config();
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
+
+console.log("APIFY_API_KEY loaded:", Boolean(process.env.APIFY_API_KEY));
 
 const app = express();
 
@@ -139,12 +140,12 @@ app.use((req, res, next) => {
 });
 
 app.get("/apify/token", (req, res) => {
-  const token = process.env.APIFY_API_TOKEN || process.env.APIFY_TOKEN;
+  const token = process.env.APIFY_API_KEY;
   if (!token) {
     res.status(500).send("Apify token is not configured on the server.");
     return;
   }
-  res.json({ token });
+  res.json({ configured: true });
 });
 
 const port = process.env.PORT || 3001;
