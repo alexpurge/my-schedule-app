@@ -136,23 +136,15 @@ input:-webkit-autofill:active{
 
 .authLoginStack{
   position: absolute;
-  left: clamp(24px, 8vw, 120px);
-  bottom: clamp(72px, 14vh, 140px);
+  left: 50%;
+  bottom: clamp(48px, 12vh, 120px);
+  transform: translateX(-50%);
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 18px;
-  width: min(360px, 80vw);
+  align-items: center;
+  gap: 0;
+  width: min(320px, 80vw);
   z-index: 2;
-}
-
-.authLoginCopy{
-  font-size: clamp(18px, 2.4vw, 28px);
-  font-weight: 600;
-  line-height: 1.25;
-  color: var(--text-main);
-  max-width: 100%;
-  text-shadow: 0 12px 24px color-mix(in srgb, #000 35%, transparent);
 }
 
 .authSplineLoginHitbox{
