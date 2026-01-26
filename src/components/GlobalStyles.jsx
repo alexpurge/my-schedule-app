@@ -205,31 +205,56 @@ input:-webkit-autofill:active{
   }
 }
 
-.authSplineLoginHitbox{
+.authGoogleButton{
   position: relative;
   transform: none;
-  width: min(260px, 100%);
-  height: 56px;
-  border: none;
+  width: min(320px, 90vw);
+  min-height: 64px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border-color));
   border-radius: 999px;
-  background: transparent;
+  background: color-mix(in srgb, var(--bg-card) 80%, #000);
   cursor: pointer;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: flex-start;
+  justify-content: center;
+  gap: 4px;
+  color: var(--text);
+  font-weight: 600;
+  padding: 10px 20px;
+  text-align: center;
+  transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease;
 }
 
-.authSplineLoginHitbox:focus-visible{
+.authGoogleButton:hover{
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 65%, var(--border-color));
+  box-shadow: 0 12px 30px -18px color-mix(in srgb, var(--accent) 50%, transparent);
+}
+
+.authGoogleButton:disabled{
+  cursor: not-allowed;
+  opacity: 0.6;
+  transform: none;
+  box-shadow: none;
+}
+
+.authGoogleButton:focus-visible{
   outline: 2px solid color-mix(in srgb, var(--accent) 65%, #fff);
   outline-offset: 4px;
 }
 
-.authGoogleButton{
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+.authGoogleButtonLabel{
+  font-size: 15px;
+  letter-spacing: -0.01em;
+}
+
+.authGoogleButtonMeta{
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
 }
 
 .authStatus{
