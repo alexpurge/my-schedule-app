@@ -843,7 +843,7 @@ transform: scale(1.5);
   display: block;
   transform: translateY(-90%, -10%) scale(1.1);
   transform-origin: center;
-  pointer-events: none;
+  pointer-events: auto;
   opacity: 1;
   transition: opacity 0.6s ease;
   will-change: opacity;
@@ -853,7 +853,7 @@ transform: scale(1.5);
   .dashboardLayout{
     grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
     min-height: calc(100vh - 260px);
-    --dashboard-panel-overlap: 20%;
+    --dashboard-panel-overlap: 30%;
   }
 
   .dashboardPanel{
