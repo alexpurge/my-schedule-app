@@ -30,7 +30,6 @@ const DashboardPanel = ({
   sheetSpreadsheetId,
   setSheetSpreadsheetId,
   recentSheets,
-  rememberRecentSheet,
   sheetStatus,
   isRunning,
   runPipeline,
@@ -267,7 +266,6 @@ const DashboardPanel = ({
                   const nextValue = e.target.value;
                   if (!nextValue) return;
                   setSheetSpreadsheetId(nextValue);
-                  rememberRecentSheet(nextValue);
                 }}
                 disabled={!sheetSyncEnabled || isRunning || !hasRecentSheets}
               >
@@ -275,9 +273,9 @@ const DashboardPanel = ({
                   {hasRecentSheets ? 'Select a recent sheet' : 'No recent sheets yet'}
                 </option>
                 {hasRecentSheets &&
-                  recentSheets.map((id) => (
-                    <option key={id} value={id}>
-                      {id}
+                  recentSheets.map((sheet) => (
+                    <option key={sheet.id} value={sheet.id}>
+                      {sheet.name ? `${sheet.name} (${sheet.id})` : sheet.id}
                     </option>
                   ))}
               </select>
@@ -289,8 +287,7 @@ const DashboardPanel = ({
                 className="input"
                 value={sheetSpreadsheetId}
                 onChange={(e) => setSheetSpreadsheetId(e.target.value)}
-                onBlur={() => rememberRecentSheet(sheetSpreadsheetId)}
-                placeholder="Paste the Google Sheet ID"
+                placeholder=""
                 disabled={!sheetSyncEnabled || isRunning}
               />
               {sheetStatus?.configured ? (
