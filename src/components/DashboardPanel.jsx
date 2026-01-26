@@ -47,6 +47,7 @@ const DashboardPanel = ({
   dedupColumn,
   filterColumn,
   finalWorkbookAvailable,
+  allowFinalDownload,
   sheetStageAvailability,
   downloadFinalSpreadsheet,
   error,
@@ -564,26 +565,28 @@ const DashboardPanel = ({
             </div>
           </div>
 
-          <button
-            className="btn"
-            onClick={downloadFinalSpreadsheet}
-            disabled={!finalWorkbookAvailable}
-            type="button"
-            style={{ width: '100%', marginTop: 14, justifyContent: 'center' }}
-            title="Download final spreadsheet"
-          >
-            {finalWorkbookAvailable ? (
-              <>
-                <FileDown size={16} />
-                Download Final Spreadsheet (.xlsx)
-              </>
-            ) : (
-              <>
-                <Download size={16} />
-                Download (available after completion)
-              </>
-            )}
-          </button>
+          {allowFinalDownload && (
+            <button
+              className="btn"
+              onClick={downloadFinalSpreadsheet}
+              disabled={!finalWorkbookAvailable}
+              type="button"
+              style={{ width: '100%', marginTop: 14, justifyContent: 'center' }}
+              title="Download final spreadsheet"
+            >
+              {finalWorkbookAvailable ? (
+                <>
+                  <FileDown size={16} />
+                  Download Final Spreadsheet (.xlsx)
+                </>
+              ) : (
+                <>
+                  <Download size={16} />
+                  Download (available after completion)
+                </>
+              )}
+            </button>
+          )}
 
           {error && (
             <div className="notice" style={{ marginTop: 14 }}>
