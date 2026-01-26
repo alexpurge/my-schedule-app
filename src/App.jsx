@@ -3171,7 +3171,7 @@ export default function App() {
         />
 
         {/* Workspace */}
-        <main className="workspace">
+        <main className={`workspace ${activeTab === 'dashboard' ? 'workspace--static' : ''}`}>
           <div className="container">
             {/* SETTINGS TAB */}
             {activeTab === 'settings' && (

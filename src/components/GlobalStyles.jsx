@@ -721,6 +721,9 @@ input:-webkit-autofill:active{
   overflow-y: auto;
   padding: 24px 28px 28px;
 }
+.workspace--static{
+  overflow: hidden;
+}
 .container{
   width: min(1280px, 100%);
   margin: 0 auto;
@@ -828,13 +831,17 @@ transform: scale(1.5);
   overflow: hidden;
   min-height: 600px;
 }
+.dashboardSplinePanel[data-running="false"] iframe{
+  filter: grayscale(0.35) brightness(0.9);
+}
 .dashboardSplinePanel iframe{
   width: 100%;
   height: 100%;
   border: 0;
   display: block;
-  transform: translate(, 10%) scale(1.1);
+  transform: translateY(10%) scale(1.1);
   transform-origin: center;
+  pointer-events: none;
 }
 .dashboardSplinePlaceholder{
   position: absolute;
@@ -844,8 +851,8 @@ transform: scale(1.5);
   align-items: center;
   justify-content: center;
   gap: 12px;
-  background: radial-gradient(circle at top, rgba(249,115,22,.12), transparent 60%),
-    linear-gradient(135deg, rgba(15,23,42,.24), rgba(15,23,42,.4));
+  background: radial-gradient(circle at top, rgba(249,115,22,.08), transparent 65%),
+    linear-gradient(135deg, rgba(15,23,42,.12), rgba(15,23,42,.2));
   color: var(--text-muted);
   text-align: center;
   padding: 24px;

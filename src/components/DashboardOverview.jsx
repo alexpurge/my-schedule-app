@@ -61,22 +61,21 @@ const DashboardOverview = ({ isRunning, stage, stats }) => {
       </section>
 
       <section className="dashboardSplinePanel" data-running={isRunning}>
-        {isRunning ? (
-          <iframe
-            title="Interactive AI orb"
-            src="https://my.spline.design/interactiveaiwebsite-3w5BVhq8qlQKX5pWGHQkWVGG/"
-            frameBorder="0"
-            loading="lazy"
-            allow="autoplay; fullscreen"
-            referrerPolicy="no-referrer"
-          />
-        ) : (
-          <div className="dashboardSplinePlaceholder">
+        <iframe
+          title="Interactive AI orb"
+          src="https://my.spline.design/interactiveaiwebsite-3w5BVhq8qlQKX5pWGHQkWVGG/"
+          frameBorder="0"
+          loading="lazy"
+          allow={isRunning ? 'autoplay; fullscreen' : 'fullscreen'}
+          referrerPolicy="no-referrer"
+        />
+        {!isRunning && (
+          <div className="dashboardSplinePlaceholder" aria-hidden="true">
             <div className="dashboardSplineBadge">
               <Sparkles size={18} />
               <span>Paused</span>
             </div>
-            <div className="dashboardSplineHint">Spline animation resumes when the system is running.</div>
+            <div className="dashboardSplineHint">Spline animation is paused while the system is idle.</div>
           </div>
         )}
       </section>
