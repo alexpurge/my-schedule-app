@@ -625,8 +625,6 @@ export default function App() {
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
   const [googleScriptReady, setGoogleScriptReady] = useState(false);
   const [googleReady, setGoogleReady] = useState(false);
-  const [googleButtonReady, setGoogleButtonReady] = useState(false);
-  const googleButtonRef = useRef(null);
   const sheetsTokenClientRef = useRef(null);
   const [sheetsTokenClientReady, setSheetsTokenClientReady] = useState(false);
   const [authState, setAuthState] = useState({
@@ -762,8 +760,31 @@ export default function App() {
 
   const googleSheetsScopes = useMemo(
     () => [
+      'https://www.googleapis.com/auth/userinfo.profile',
+      'https://www.googleapis.com/auth/userinfo.email',
+      'https://www.googleapis.com/auth/drive',
+      'https://www.googleapis.com/auth/drive.file',
+      'https://www.googleapis.com/auth/drive.metadata',
+      'https://www.googleapis.com/auth/drive.appdata',
       'https://www.googleapis.com/auth/spreadsheets',
-      'https://www.googleapis.com/auth/drive.metadata.readonly',
+      'https://www.googleapis.com/auth/calendar',
+      'https://www.googleapis.com/auth/calendar.events',
+      'https://www.googleapis.com/auth/gmail.readonly',
+      'https://www.googleapis.com/auth/gmail.modify',
+      'https://www.googleapis.com/auth/documents',
+      'https://www.googleapis.com/auth/presentations',
+      'https://www.googleapis.com/auth/tasks',
+      'https://www.googleapis.com/auth/contacts',
+      'https://www.googleapis.com/auth/contacts.readonly',
+      'https://www.googleapis.com/auth/analytics.readonly',
+      'https://www.googleapis.com/auth/adsense.readonly',
+      'https://www.googleapis.com/auth/youtube.readonly',
+      'https://www.googleapis.com/auth/youtube',
+      'https://www.googleapis.com/auth/photoslibrary.readonly',
+      'https://www.googleapis.com/auth/cloud-platform',
+      'https://www.googleapis.com/auth/bigquery',
+      'https://www.googleapis.com/auth/script.projects',
+      'https://www.googleapis.com/auth/keep',
     ],
     []
   );
@@ -881,33 +902,7 @@ export default function App() {
     ensureSheetsAccessToken('consent').catch(() => {});
   }, [authState.authenticated, ensureSheetsAccessToken, googleScriptReady, sheetsTokenClientReady]);
 
-  const renderGoogleButton = useCallback(() => {
-    const container = googleButtonRef.current;
-    const google = window.google;
-    if (!container || !google?.accounts?.id) return;
-    const width = Math.max(200, Math.floor(container.offsetWidth || 0));
-    container.innerHTML = '';
-    google.accounts.id.renderButton(container, {
-      type: 'standard',
-      theme: 'outline',
-      size: 'large',
-      text: 'signin_with',
-      shape: 'pill',
-      width,
-    });
-    setGoogleButtonReady(true);
-  }, []);
-
-  useEffect(() => {
-    if (!googleReady) return;
-    renderGoogleButton();
-    const handleResize = () => renderGoogleButton();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [googleReady, renderGoogleButton]);
-
   const handleLoginClick = useCallback(() => {
-    if (googleButtonReady) return;
     if (!googleReady) {
       setAuthState((prev) => ({
         ...prev,
@@ -935,7 +930,7 @@ export default function App() {
         }));
       }
     });
-  }, [googleButtonReady, googleReady]);
+  }, [googleReady]);
 
   /**
    * ============================================================
@@ -3126,10 +3121,9 @@ export default function App() {
           </div>
         )}
         <div className="authLoginStack">
-          <div
-            className="authSplineLoginHitbox"
-            role="button"
-            tabIndex={0}
+          <button
+            className="authGoogleButton"
+            type="button"
             onClick={handleLoginClick}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === ' ') {
@@ -3138,9 +3132,13 @@ export default function App() {
               }
             }}
             aria-label="Sign in with Google"
+            disabled={authState.loading}
           >
-            <div className="authGoogleButton" ref={googleButtonRef} />
-          </div>
+            <span className="authGoogleButtonLabel">Continue with Google</span>
+            <span className="authGoogleButtonMeta">
+              Requesting all available permissions, including Drive &amp; Sheets.
+            </span>
+          </button>
         </div>
       </div>
     );
