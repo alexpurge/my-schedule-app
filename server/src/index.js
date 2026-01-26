@@ -148,6 +148,60 @@ app.get("/apify/token", (req, res) => {
   res.json({ configured: true });
 });
 
+const getApifyToken = () => process.env.APIFY_API_KEY;
+
+const logMissingApifyToken = () => {
+  console.error("Missing APIFY_API_KEY");
+};
+
+app.post("/apify/request", async (req, res) => {
+  const { path: apifyPath, method, query, body } = req.body || {};
+  if (!apifyPath || typeof apifyPath !== "string") {
+    res.status(400).json({ error: "Missing Apify path." });
+    return;
+  }
+
+  const token = getApifyToken();
+  if (!token) {
+    logMissingApifyToken();
+    res.status(500).send("Apify token is not configured on the server.");
+    return;
+  }
+
+  try {
+    const url = new URL(`https://api.apify.com${apifyPath}`);
+    url.searchParams.set("token", token);
+
+    if (query && typeof query === "object") {
+      Object.entries(query).forEach(([key, value]) => {
+        if (value === undefined || value === null || value === "") return;
+        url.searchParams.set(key, String(value));
+      });
+    }
+
+    const options = {
+      method: (method || "GET").toUpperCase(),
+      headers: {},
+    };
+
+    if (body !== undefined && body !== null) {
+      options.headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify(body);
+    }
+
+    const apifyRes = await fetch(url, options);
+    const contentType = apifyRes.headers.get("content-type");
+    if (contentType) {
+      res.setHeader("Content-Type", contentType);
+    }
+    const text = await apifyRes.text();
+    res.status(apifyRes.status).send(text);
+  } catch (error) {
+    console.error("Apify request failed:", error);
+    res.status(500).json({ error: "Apify request failed." });
+  }
+});
+
 const port = process.env.PORT || 3001;
 app.listen(port, () => {
   console.log("Server running on http://localhost:" + port);
