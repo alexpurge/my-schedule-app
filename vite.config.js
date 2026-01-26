@@ -6,8 +6,18 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      '/auth': 'http://localhost:3001',
-      '/health': 'http://localhost:3001',
+      '/auth': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/health': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/proxy': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
     },
   },
 })
