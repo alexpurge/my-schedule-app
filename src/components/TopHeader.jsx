@@ -10,13 +10,17 @@ const TopHeader = ({
   resetAll,
   downloadFinalSpreadsheet,
   finalWorkbookAvailable,
-}) => (
-  <header className="topHeader">
-    <div className="headerLeft">
-      <div className="headerTitle">{activeTab === 'settings' ? 'Pipeline Settings' : 'Filtration System'}</div>
-      <div className="headerSep" />
-      <StatusPill stage={stage} isRunning={isRunning} />
-    </div>
+}) => {
+  const headerTitle =
+    activeTab === 'settings' ? 'Pipeline Settings' : activeTab === 'filtration' ? 'Filtration System' : 'Dashboard';
+
+  return (
+    <header className="topHeader">
+      <div className="headerLeft">
+        <div className="headerTitle">{headerTitle}</div>
+        <div className="headerSep" />
+        <StatusPill stage={stage} isRunning={isRunning} />
+      </div>
 
     <div className="headerRight">
       {isRunning && (
@@ -42,7 +46,8 @@ const TopHeader = ({
         Export
       </button>
     </div>
-  </header>
-);
+    </header>
+  );
+};
 
 export default TopHeader;
