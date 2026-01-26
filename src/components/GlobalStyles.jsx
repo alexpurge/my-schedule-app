@@ -822,8 +822,8 @@ input:-webkit-autofill:active{
 }
 .dashboardSplinePanel{
   position: relative;
-  left: -100px;
-  transform: scale(1.5);
+left: -100px; 
+transform: scale(1.5); 
   border-radius: 0;
   border: none;
   background: transparent;
@@ -839,9 +839,9 @@ input:-webkit-autofill:active{
   height: 100%;
   border: 0;
   display: block;
-  transform: translate(-30%, -8%) scale(1.1);
+  transform: translateY(-90%, -10%) scale(1.1);
   transform-origin: center;
-  pointer-events: auto;
+  pointer-events: none;
   opacity: 1;
   transition: opacity 0.6s ease;
   will-change: opacity;
