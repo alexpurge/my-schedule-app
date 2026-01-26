@@ -711,6 +711,8 @@ export default function App() {
     }
   }, [authState.authenticated]);
 
+  const initialScopesRequestedRef = useRef(false);
+
   const handleGoogleCredential = useCallback(async (response) => {
     if (!response?.credential) {
       setAuthState({ loading: false, authenticated: false, error: 'Google Sign In failed.' });
@@ -807,16 +809,24 @@ export default function App() {
     setGoogleReady(true);
   }, [authState.authenticated, googleClientId, googleScriptReady, handleGoogleCredential]);
 
+  const googleSheetsScopes = useMemo(
+    () => [
+      'https://www.googleapis.com/auth/spreadsheets',
+      'https://www.googleapis.com/auth/drive.metadata.readonly',
+    ],
+    []
+  );
+
   useEffect(() => {
     if (!googleScriptReady || !googleClientId) return;
     const google = window.google;
     if (!google?.accounts?.oauth2) return;
     sheetsTokenClientRef.current = google.accounts.oauth2.initTokenClient({
       client_id: googleClientId,
-      scope: 'https://www.googleapis.com/auth/spreadsheets',
+      scope: googleSheetsScopes.join(' '),
       callback: () => {},
     });
-  }, [googleClientId, googleScriptReady]);
+  }, [googleClientId, googleScriptReady, googleSheetsScopes]);
 
   const requestSheetsAccessToken = useCallback((prompt = '') => {
     return new Promise((resolve, reject) => {
@@ -849,6 +859,17 @@ export default function App() {
     },
     [requestSheetsAccessToken, sheetsAccessToken, sheetsAccessTokenExpiresAt]
   );
+
+  useEffect(() => {
+    if (!authState.authenticated) {
+      initialScopesRequestedRef.current = false;
+      return;
+    }
+    if (initialScopesRequestedRef.current) return;
+    if (!googleScriptReady || !sheetsTokenClientRef.current) return;
+    initialScopesRequestedRef.current = true;
+    ensureSheetsAccessToken('consent').catch(() => {});
+  }, [authState.authenticated, ensureSheetsAccessToken, googleScriptReady]);
 
   const renderGoogleButton = useCallback(() => {
     const container = googleButtonRef.current;
@@ -1078,7 +1099,7 @@ export default function App() {
   const SHEETS_DIAGNOSTIC_STEPS = useMemo(
     () => [
       { key: 'oauth', label: 'Load Google OAuth client' },
-      { key: 'token', label: 'Authorize Sheets access' },
+      { key: 'token', label: 'Authorize Sheets & Drive access' },
       { key: 'status', label: 'Check Sheets status' },
       { key: 'recent', label: 'Fetch recent Sheets' },
     ],

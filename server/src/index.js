@@ -211,6 +211,17 @@ const buildSheetsUrl = (spreadsheetId, path, query) => {
   return url;
 };
 
+const buildDriveUrl = (path, query) => {
+  const url = new URL(`https://www.googleapis.com/drive/v3/${path}`);
+  if (query && typeof query === "object") {
+    Object.entries(query).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === "") return;
+      url.searchParams.set(key, String(value));
+    });
+  }
+  return url;
+};
+
 const requestGoogleApi = async ({ apiMethod, url, method = "GET", headers, body }) => {
   diagLog(`google api call: ${apiMethod}`);
   try {
@@ -258,6 +269,21 @@ const requestSheetsApi = async ({ spreadsheetId, path, method = "GET", query, bo
     return { ok: false, status: 500, data: { error: "Sheets API is not configured for this server or user." } };
   }
   const url = buildSheetsUrl(spreadsheetId, path, query);
+  return requestGoogleApi({
+    apiMethod,
+    url,
+    method,
+    headers,
+    body,
+  });
+};
+
+const requestDriveApi = async ({ path, method = "GET", query, body, accessToken, apiMethod }) => {
+  const headers = await getAuthHeaders(accessToken, getDriveAuth);
+  if (!headers) {
+    return { ok: false, status: 500, data: { error: "Drive API is not configured for this server or user." } };
+  }
+  const url = buildDriveUrl(path, query);
   return requestGoogleApi({
     apiMethod,
     url,
@@ -324,11 +350,26 @@ app.get("/sheets/recent", (req, res) => {
   const diagnostics = getAuthDiagnostics(req);
   diagLog("auth path", diagnostics.authPath);
   diagLog("auth inputs present", diagnostics.authInputs);
-  res.json({
-    files: [],
-    disabled: true,
-    message: "Recent sheets lookup requires Google Drive API access and is disabled.",
-  });
+  const limit = Math.max(1, Math.min(Number(req.query?.limit) || 8, 20));
+  const query = {
+    q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
+    orderBy: "modifiedTime desc",
+    pageSize: limit,
+    fields: "files(id,name,modifiedTime,webViewLink)",
+  };
+  requestDriveApi({
+    path: "files",
+    query,
+    accessToken: diagnostics.accessToken,
+    apiMethod: "drive.files.list",
+  })
+    .then((response) => {
+      res.status(response.ok ? 200 : response.status).json(response.ok ? response.data : response.data);
+    })
+    .catch((error) => {
+      console.error("Drive recent sheets failed:", error);
+      res.status(500).json({ error: "Unable to fetch recent Sheets from Drive." });
+    });
 });
 
 app.post("/sheets/sync", async (req, res) => {
