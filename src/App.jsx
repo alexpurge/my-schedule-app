@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import DashboardOverview from './components/DashboardOverview';
 import DashboardPanel from './components/DashboardPanel';
 import GlobalStyles from './components/GlobalStyles';
 import ProgressBar from './components/ProgressBar';
@@ -905,7 +906,7 @@ export default function App() {
    *  NAV (NEW: SETTINGS PAGE)
    * ============================================================
    */
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard | settings
+  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard | filtration | settings
 
   /**
    * ============================================================
@@ -3191,6 +3192,11 @@ export default function App() {
 
             {/* DASHBOARD TAB */}
             {activeTab === 'dashboard' && (
+              <DashboardOverview isRunning={isRunning} stage={stage} stats={stats} />
+            )}
+
+            {/* FILTRATION TAB */}
+            {activeTab === 'filtration' && (
               <DashboardPanel
                 watchdogKeywordsInput={watchdogKeywordsInput}
                 setWatchdogKeywordsInput={setWatchdogKeywordsInput}

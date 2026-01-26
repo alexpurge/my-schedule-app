@@ -726,6 +726,148 @@ input:-webkit-autofill:active{
   margin: 0 auto;
 }
 
+.dashboardLayout{
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
+  min-height: min(720px, 100%);
+  align-items: stretch;
+}
+.dashboardPanel{
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: 24px;
+  padding: 28px;
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.dashboardHero{
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.dashboardHeroEyebrow{
+  text-transform: uppercase;
+  letter-spacing: .18em;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--text-subtle);
+}
+.dashboardHeroTitle{
+  font-size: clamp(22px, 3vw, 32px);
+  font-weight: 700;
+}
+.dashboardHeroSubtitle{
+  color: var(--text-muted);
+  max-width: 520px;
+  font-size: 14px;
+}
+.dashboardCards{
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+}
+.dashboardCard{
+  padding: 18px;
+  border-radius: 18px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+  background: color-mix(in srgb, var(--bg-input) 86%, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.dashboardCardLabel{
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .14em;
+  color: var(--text-subtle);
+  font-weight: 700;
+}
+.dashboardCardValue{
+  font-size: 26px;
+  font-weight: 700;
+}
+.dashboardCardNote{
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.dashboardStatus{
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+  font-weight: 600;
+  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+}
+.dashboardStatusDot{
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #f87171;
+  box-shadow: 0 0 12px rgba(248,113,113,.65);
+}
+.dashboardStatus.is-running .dashboardStatusDot{
+  background: #34d399;
+  box-shadow: 0 0 12px rgba(52,211,153,.6);
+}
+.dashboardStatusLabel{
+  font-size: 14px;
+}
+.dashboardSplinePanel{
+  position: relative;
+  border-radius: 24px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-lg);
+  overflow: hidden;
+  min-height: 420px;
+}
+.dashboardSplinePanel iframe{
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+}
+.dashboardSplinePlaceholder{
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: radial-gradient(circle at top, rgba(249,115,22,.12), transparent 60%),
+    linear-gradient(135deg, rgba(15,23,42,.24), rgba(15,23,42,.4));
+  color: var(--text-muted);
+  text-align: center;
+  padding: 24px;
+}
+.dashboardSplineBadge{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+  background: color-mix(in srgb, var(--bg-surface) 80%, transparent);
+  font-weight: 600;
+}
+.dashboardSplineHint{
+  font-size: 13px;
+  max-width: 280px;
+}
+
+@media (min-width: 1024px){
+  .dashboardLayout{
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    min-height: calc(100vh - 260px);
+  }
+}
+
 .grid{
   display:grid;
   grid-template-columns: repeat(12, minmax(0, 1fr));

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Layers, Settings, Sun, Moon } from 'lucide-react';
+import { LayoutDashboard, Layers, Settings, Sun, Moon } from 'lucide-react';
 
 const Sidebar = ({ activeTab, onTabChange, theme, onToggleTheme }) => (
   <aside className="sidebar">
@@ -20,6 +20,15 @@ const Sidebar = ({ activeTab, onTabChange, theme, onToggleTheme }) => (
         className={`navItem ${activeTab === 'dashboard' ? 'navItemActive' : ''}`}
         type="button"
         onClick={() => onTabChange('dashboard')}
+      >
+        <LayoutDashboard className="navIcon" />
+        <span className="navLabel">Dashboard</span>
+      </button>
+
+      <button
+        className={`navItem ${activeTab === 'filtration' ? 'navItemActive' : ''}`}
+        type="button"
+        onClick={() => onTabChange('filtration')}
       >
         <Layers className="navIcon" />
         <span className="navLabel">Filtration System</span>
