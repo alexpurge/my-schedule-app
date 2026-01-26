@@ -146,11 +146,22 @@ input:-webkit-autofill:active{
   background: transparent;
   cursor: pointer;
   z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .authSplineLoginHitbox:focus-visible{
   outline: 2px solid color-mix(in srgb, var(--accent) 65%, #fff);
   outline-offset: 4px;
+}
+
+.authGoogleButton{
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .authStatus{
