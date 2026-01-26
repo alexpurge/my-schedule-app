@@ -754,11 +754,37 @@ export default function App() {
 
   /**
    * ============================================================
-   *  APIFY AUTH (SERVER-SUPPLIED)
+   *  APIFY (SERVER-SUPPLIED)
    * ============================================================
    */
-  const [apifyToken, setApifyToken] = useState('');
   const [memory, setMemory] = useState(128);
+
+  const apifyRequest = useCallback(async ({ path, method = 'GET', query, body }) => {
+    const res = await fetch('/apify/request', {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        path,
+        method,
+        query,
+        body,
+      }),
+    });
+
+    const contentType = res.headers.get('content-type') || '';
+    let payload = null;
+    if (contentType.includes('application/json')) {
+      try {
+        payload = await res.json();
+      } catch {
+        payload = null;
+      }
+    } else {
+      payload = await res.text();
+    }
+    return { ok: res.ok, status: res.status, data: payload };
+  }, []);
 
   /**
    * ============================================================
@@ -824,33 +850,6 @@ export default function App() {
   const [error, setError] = useState(null);
 
   const stopRef = useRef(false);
-
-  useEffect(() => {
-    if (!authState.authenticated) return;
-    let active = true;
-
-    const fetchApifyToken = async () => {
-      try {
-        const res = await fetch('/apify/token', { credentials: 'include' });
-        if (!res.ok) {
-          const message = await res.text();
-          throw new Error(message || `Token request failed (${res.status})`);
-        }
-        const data = await res.json();
-        if (active) setApifyToken(String(data?.token || '').trim());
-      } catch (err) {
-        if (!active) return;
-        setApifyToken('');
-        setError(err instanceof Error ? err.message : 'Unable to load Apify token.');
-      }
-    };
-
-    fetchApifyToken();
-
-    return () => {
-      active = false;
-    };
-  }, [authState.authenticated]);
 
   /**
    * ============================================================
@@ -1021,15 +1020,15 @@ export default function App() {
    * ============================================================
    */
   const waitForWatchdogFinalStatus = useCallback(
-    async (runId, apiKey, { timeoutMs = 20000, intervalMs = 1500 } = {}) => {
+    async (runId, { timeoutMs = 20000, intervalMs = 1500 } = {}) => {
       const startedAt = Date.now();
       let lastStatus = null;
 
       while (Date.now() - startedAt < timeoutMs) {
         try {
-          const statusRes = await fetch(`https://api.apify.com/v2/acts/${watchdogActorId}/runs/${runId}?token=${apiKey}`);
+          const statusRes = await apifyRequest({ path: `/v2/acts/${watchdogActorId}/runs/${runId}` });
           if (statusRes.ok) {
-            const statusData = await statusRes.json();
+            const statusData = statusRes.data;
             const status = statusData?.data?.status || null;
             lastStatus = status;
             if (['ABORTED', 'FAILED', 'SUCCEEDED'].includes(status)) {
@@ -1045,25 +1044,24 @@ export default function App() {
 
       return lastStatus;
     },
-    [watchdogActorId]
+    [apifyRequest, watchdogActorId]
   );
 
   const abortWatchdogJob = useCallback(
     async (job, reason) => {
       if (!job?.runId) return;
-      const apiKey = apifyToken.trim();
-      if (!apiKey) return;
       let finalStatus = null;
 
       try {
         const maxAttempts = 3;
 
         for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-          await fetch(`https://api.apify.com/v2/acts/${watchdogActorId}/runs/${job.runId}/abort?token=${apiKey}`, {
+          await apifyRequest({
+            path: `/v2/acts/${watchdogActorId}/runs/${job.runId}/abort`,
             method: 'POST',
           });
 
-          finalStatus = await waitForWatchdogFinalStatus(job.runId, apiKey, {
+          finalStatus = await waitForWatchdogFinalStatus(job.runId, {
             timeoutMs: 20000,
             intervalMs: 1500,
           });
@@ -1096,7 +1094,7 @@ export default function App() {
         addLog(`[WATCHDOG] Abort failed for "${job.keyword}".`, 'warning');
       }
     },
-    [addLog, apifyToken, updateWatchdogJob, waitForWatchdogFinalStatus, watchdogActorId]
+    [addLog, apifyRequest, updateWatchdogJob, waitForWatchdogFinalStatus, watchdogActorId]
   );
 
   /**
@@ -1106,8 +1104,6 @@ export default function App() {
    * ============================================================
    */
   const runWatchdogAndExportRows = useCallback(async () => {
-    const apiKey = apifyToken.trim();
-    if (!apiKey) throw new Error('Apify token is unavailable from the backend.');
     if (!watchdogMinDate) throw new Error('Minimum Date is CRITICAL. Please set it.');
     if (!watchdogKeywordsInput.trim()) throw new Error('Please enter at least one keyword.');
 
@@ -1152,7 +1148,8 @@ export default function App() {
       // If running on Apify, abort first
       if (job.status === 'RUNNING' && job.runId) {
         try {
-          await fetch(`https://api.apify.com/v2/acts/${watchdogActorId}/runs/${job.runId}/abort?token=${apiKey}`, {
+          await apifyRequest({
+            path: `/v2/acts/${watchdogActorId}/runs/${job.runId}/abort`,
             method: 'POST',
           });
         } catch (e) {
@@ -1206,26 +1203,24 @@ export default function App() {
       if (watchdogMinDate) inputBody.searchStartDate = watchdogMinDate;
       if (watchdogMaxDate) inputBody.searchEndDate = watchdogMaxDate;
 
-      const options = new URLSearchParams();
-      if (memory) options.append('memory', memory);
-      if (watchdogMaxRuntime) options.append('timeout', parseInt(watchdogMaxRuntime) * 60);
+      const query = {};
+      if (memory) query.memory = memory;
+      if (watchdogMaxRuntime) query.timeout = parseInt(watchdogMaxRuntime) * 60;
 
       try {
         const tryNum = (job.retryCount || 0) + 1;
         addLog(`Starting bulk initial pull run for "${job.keyword}" (Attempt ${tryNum})...`, 'info');
 
-        const response = await fetch(
-          `https://api.apify.com/v2/acts/${watchdogActorId}/runs?token=${apiKey}&${options.toString()}`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(inputBody),
-          }
-        );
+        const response = await apifyRequest({
+          path: `/v2/acts/${watchdogActorId}/runs`,
+          method: 'POST',
+          query,
+          body: inputBody,
+        });
 
         if (!response.ok) throw new Error(`API Error ${response.status}`);
 
-        const data = await response.json();
+        const data = response.data;
         updateWatchdogJob(job.id, {
           status: 'RUNNING',
           runId: data.data.id,
@@ -1249,17 +1244,20 @@ export default function App() {
 
         try {
           // A) status & stats
-          const runRes = await fetch(`https://api.apify.com/v2/acts/${watchdogActorId}/runs/${job.runId}?token=${apiKey}`);
-          const runData = await runRes.json();
+          const runRes = await apifyRequest({
+            path: `/v2/acts/${watchdogActorId}/runs/${job.runId}`,
+          });
+          const runData = runRes.data;
           const runStatus = runData?.data?.status;
 
           let reportedCount = runData?.data?.stats?.itemCount || 0;
 
           // B) dataset truth
-          const datasetRes = await fetch(
-            `https://api.apify.com/v2/datasets/${job.datasetId}/items?token=${apiKey}&limit=50&desc=true&clean=true`
-          );
-          const items = await datasetRes.json();
+          const datasetRes = await apifyRequest({
+            path: `/v2/datasets/${job.datasetId}/items`,
+            query: { limit: 50, desc: true, clean: true },
+          });
+          const items = datasetRes.data;
           const hasActualItems = Array.isArray(items) && items.length > 0;
 
           const displayCount = Math.max(reportedCount, hasActualItems ? (reportedCount || items.length) : 0);
@@ -1457,11 +1455,12 @@ export default function App() {
           try {
             for (let offset = 0; offset < SCHEMA_ITEM_LIMIT; offset += SCHEMA_PAGE_SIZE) {
               if (stopRef.current) break;
-              const res = await fetch(
-                `https://api.apify.com/v2/datasets/${job.datasetId}/items?token=${apiKey}&limit=${SCHEMA_PAGE_SIZE}&offset=${offset}&clean=false`
-              );
+              const res = await apifyRequest({
+                path: `/v2/datasets/${job.datasetId}/items`,
+                query: { limit: SCHEMA_PAGE_SIZE, offset, clean: false },
+              });
               if (!res.ok) break;
-              const items = await res.json();
+              const items = res.data;
               if (Array.isArray(items) && items.length > 0) {
                 items.forEach((item) => {
                   const flattened = flattenRecord(item);
@@ -1498,11 +1497,12 @@ export default function App() {
         try {
           for (let offset = 0; ; offset += DATA_PAGE_SIZE) {
             if (stopRef.current) break;
-            const res = await fetch(
-              `https://api.apify.com/v2/datasets/${job.datasetId}/items?token=${apiKey}&clean=false&limit=${DATA_PAGE_SIZE}&offset=${offset}`
-            );
+            const res = await apifyRequest({
+              path: `/v2/datasets/${job.datasetId}/items`,
+              query: { clean: false, limit: DATA_PAGE_SIZE, offset },
+            });
             if (!res.ok) break;
-            const items = await res.json();
+            const items = res.data;
             if (!Array.isArray(items) || items.length === 0) break;
 
             for (const item of items) {
@@ -1558,7 +1558,7 @@ export default function App() {
     abortWatchdogJob,
     addLog,
     allowSet,
-    apifyToken,
+    apifyRequest,
     dateViolationEnabled,
     dateViolationStreakLimit,
     memory,
@@ -1591,20 +1591,22 @@ export default function App() {
           },
         };
 
-        const token = encodeURIComponent(apifyToken.trim());
-        const startUrl = `https://api.apify.com/v2/acts/api-empire~facebook-pages-scraper/runs?token=${token}&memory=${memory}`;
-        const startResponse = await fetch(startUrl, {
+        const query = {};
+        if (memory) query.memory = memory;
+        const startResponse = await apifyRequest({
+          path: '/v2/acts/api-empire~facebook-pages-scraper/runs',
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(inputPayload),
+          query,
+          body: inputPayload,
         });
 
         if (!startResponse.ok) {
-          const errText = await startResponse.text();
+          const errText =
+            typeof startResponse.data === 'string' ? startResponse.data : JSON.stringify(startResponse.data || {});
           throw new Error(`Batch ${batchIndex + 1} failed start: ${startResponse.status} - ${errText}`);
         }
 
-        const startData = await startResponse.json();
+        const startData = startResponse.data;
         const runId = startData?.data?.id;
         const datasetId = startData?.data?.defaultDatasetId;
 
@@ -1614,11 +1616,11 @@ export default function App() {
         while (status === 'RUNNING' || status === 'READY') {
           if (stopRef.current) throw new Error('Stopped by user.');
           await sleep(5000 + Math.random() * 2000);
-          const statusRes = await fetch(
-            `https://api.apify.com/v2/acts/api-empire~facebook-pages-scraper/runs/${runId}?token=${token}`
-          );
+          const statusRes = await apifyRequest({
+            path: `/v2/acts/api-empire~facebook-pages-scraper/runs/${runId}`,
+          });
           if (statusRes.ok) {
-            const statusData = await statusRes.json();
+            const statusData = statusRes.data;
             status = statusData?.data?.status;
           } else {
             addLog(`Batch ${batchIndex + 1}: status check failed (${statusRes.status}). Retrying...`, 'warning');
@@ -1636,7 +1638,7 @@ export default function App() {
         return null;
       }
     },
-    [addLog, apifyToken, memory]
+    [addLog, apifyRequest, memory]
   );
 
   const normalizeUrl = useCallback((raw) => {
@@ -1805,14 +1807,6 @@ export default function App() {
     setFilteredRows([]);
 
     stopRef.current = false;
-
-    // Guard rails (NO POPUPS)
-    if (!apifyToken.trim()) {
-      setError('Apify token is unavailable from the backend.');
-      setStage('error');
-      setStatus('Missing Apify token.');
-      return;
-    }
 
     setIsRunning(true);
     setStage('watchdog');
@@ -2076,16 +2070,17 @@ export default function App() {
 
       addLog(`Fetching dataset items from ${validIds.length} dataset(s)...`, 'info');
 
-      const token = encodeURIComponent(apifyToken.trim());
       let allItems = [];
 
       for (let i = 0; i < validIds.length; i++) {
         if (stopRef.current) throw new Error('Stopped by user.');
         const dsId = validIds[i];
-        const url = `https://api.apify.com/v2/datasets/${dsId}/items?token=${token}&format=json`;
-        const res = await fetch(url);
+        const res = await apifyRequest({
+          path: `/v2/datasets/${dsId}/items`,
+          query: { format: 'json' },
+        });
         if (res.ok) {
-          const items = await res.json();
+          const items = res.data;
           if (Array.isArray(items) && items.length) {
             const enriched = items.map((item) => {
               const matchedUrl = resolveItemUrl(item, urlKeywordMap);
@@ -2247,7 +2242,7 @@ export default function App() {
     abortWatchdogJob,
     addLog,
     allowSet,
-    apifyToken,
+    apifyRequest,
     buildUrlKeywordMap,
     dedupColumn,
     extractUrls,
