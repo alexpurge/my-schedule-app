@@ -935,6 +935,28 @@ export default function App() {
     }
   }, [sheetAppendMode, sheetAutoClear, sheetSpreadsheetId, sheetSyncEnabled, sheetTabPrefix]);
 
+  const sheetsRequest = useCallback(async ({ path, method = 'POST', body }) => {
+    const res = await fetch(path, {
+      method,
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const contentType = res.headers.get('content-type') || '';
+    let payload = null;
+    if (contentType.includes('application/json')) {
+      try {
+        payload = await res.json();
+      } catch {
+        payload = null;
+      }
+    } else {
+      payload = await res.text();
+    }
+    return { ok: res.ok, status: res.status, data: payload };
+  }, []);
+
   const refreshRecentSheets = useCallback(async () => {
     const res = await sheetsRequest({
       path: '/sheets/recent?limit=8',
@@ -975,28 +997,6 @@ export default function App() {
         query,
         body,
       }),
-    });
-
-    const contentType = res.headers.get('content-type') || '';
-    let payload = null;
-    if (contentType.includes('application/json')) {
-      try {
-        payload = await res.json();
-      } catch {
-        payload = null;
-      }
-    } else {
-      payload = await res.text();
-    }
-    return { ok: res.ok, status: res.status, data: payload };
-  }, []);
-
-  const sheetsRequest = useCallback(async ({ path, method = 'POST', body }) => {
-    const res = await fetch(path, {
-      method,
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined,
     });
 
     const contentType = res.headers.get('content-type') || '';
