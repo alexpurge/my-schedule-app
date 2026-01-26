@@ -839,9 +839,9 @@ input:-webkit-autofill:active{
   height: 100%;
   border: 0;
   display: block;
-  transform: translate(-30%, -8%) scale(1.1);
+  transform: translate(-90%, -10%) scale(1.1);
   transform-origin: center;
-  pointer-events: auto;
+  pointer-events: none;
   opacity: 1;
   transition: opacity 0.6s ease;
   will-change: opacity;
