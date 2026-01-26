@@ -150,27 +150,23 @@ input:-webkit-autofill:active{
   font-size: 14px;
 }
 
-.authLoginButton{
+.authSplineLoginHitbox{
+  position: absolute;
+  left: 50%;
+  bottom: 120px;
+  transform: translateX(-50%);
+  width: min(240px, 70vw);
+  height: 64px;
   border: none;
   border-radius: 999px;
-  padding: 12px 26px;
-  font-size: 15px;
-  font-weight: 600;
+  background: transparent;
   cursor: pointer;
-  color: #0f172a;
-  background: #f8fafc;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.15);
-  transition: transform 0.18s ease, box-shadow 0.18s ease;
+  z-index: 2;
 }
 
-.authLoginButton:hover{
-  transform: translateY(-1px);
-  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.2);
-}
-
-.authLoginButton:active{
-  transform: translateY(0);
-  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
+.authSplineLoginHitbox:focus-visible{
+  outline: 2px solid color-mix(in srgb, var(--accent) 65%, #fff);
+  outline-offset: 4px;
 }
 
 .authStatus{
