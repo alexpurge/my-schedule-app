@@ -730,9 +730,11 @@ input:-webkit-autofill:active{
 }
 
 .dashboardLayout{
+  --dashboard-gap: 24px;
+  --dashboard-panel-overlap: 0px;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 24px;
+  gap: var(--dashboard-gap);
   min-height: min(720px, 100%);
   align-items: stretch;
 }
@@ -851,6 +853,12 @@ input:-webkit-autofill:active{
   .dashboardLayout{
     grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
     min-height: calc(100vh - 260px);
+    --dashboard-panel-overlap: 16px;
+  }
+
+  .dashboardPanel{
+    width: calc(100% + var(--dashboard-panel-overlap));
+    margin-right: calc(-1 * var(--dashboard-panel-overlap));
   }
 }
 
