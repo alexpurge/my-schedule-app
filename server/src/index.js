@@ -14,6 +14,7 @@ dotenv.config({ path: path.resolve(__dirname, "../.env") });
 console.log("APIFY_API_KEY loaded:", Boolean(process.env.APIFY_API_KEY));
 
 const app = express();
+const diagnosticsEnabled = process.env.DIAGNOSTICS === "true";
 
 const googleClientId =
   process.env.GOOGLE_CLIENT_ID ||
@@ -26,6 +27,15 @@ const allowedEmails = (process.env.ALLOWED_EMAILS || "")
 const authClient = new OAuth2Client(googleClientId);
 const sessions = new Map();
 const SESSION_COOKIE = "schedule_session";
+
+const diagLog = (message, details) => {
+  if (!diagnosticsEnabled) return;
+  if (details === undefined) {
+    console.log(`[diagnostics] ${message}`);
+    return;
+  }
+  console.log(`[diagnostics] ${message}`, details);
+};
 
 app.use(cors({
   origin: "http://localhost:5173",
@@ -155,11 +165,30 @@ const getGoogleAuth = (scopes) => {
 };
 
 const getSheetsAuth = () => getGoogleAuth(["https://www.googleapis.com/auth/spreadsheets"]);
+const getDriveAuth = () =>
+  getGoogleAuth(["https://www.googleapis.com/auth/drive.metadata.readonly"]);
 
 const getAccessTokenFromRequest = (req) => {
   const header = req.headers?.authorization || "";
   if (!header.startsWith("Bearer ")) return null;
   return header.slice("Bearer ".length).trim() || null;
+};
+
+const getAuthDiagnostics = (req) => {
+  const accessToken = getAccessTokenFromRequest(req);
+  const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const privateKey = process.env.GOOGLE_PRIVATE_KEY;
+  const hasServiceAccount = Boolean(clientEmail && privateKey);
+  const authPath = accessToken ? "user_access_token" : hasServiceAccount ? "service_account" : "none";
+  return {
+    accessToken,
+    authPath,
+    authInputs: {
+      accessTokenPresent: Boolean(accessToken),
+      serviceAccountEmailPresent: Boolean(clientEmail),
+      serviceAccountKeyPresent: Boolean(privateKey),
+    },
+  };
 };
 
 const getAuthHeaders = async (accessToken, fallbackAuth) => {
@@ -182,28 +211,60 @@ const buildSheetsUrl = (spreadsheetId, path, query) => {
   return url;
 };
 
-const requestSheetsApi = async ({ spreadsheetId, path, method = "GET", query, body, accessToken }) => {
+const requestGoogleApi = async ({ apiMethod, url, method = "GET", headers, body }) => {
+  diagLog(`google api call: ${apiMethod}`);
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: {
+        ...headers,
+        "Content-Type": "application/json",
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const contentType = res.headers.get("content-type") || "";
+    let payload = null;
+    if (contentType.includes("application/json")) {
+      payload = await res.json().catch(() => null);
+    } else {
+      payload = await res.text().catch(() => null);
+    }
+    if (!res.ok) {
+      diagLog(`google api error: ${apiMethod}`, {
+        status: res.status,
+        message: res.statusText,
+        responseData: payload,
+      });
+    }
+    return { ok: res.ok, status: res.status, data: payload };
+  } catch (error) {
+    diagLog(`google api exception: ${apiMethod}`, {
+      status: error?.response?.status,
+      message: error instanceof Error ? error.message : "Unknown error",
+      responseData: error?.response?.data,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
+    return {
+      ok: false,
+      status: error?.response?.status || 500,
+      data: error?.response?.data || { error: "Google API request failed." },
+    };
+  }
+};
+
+const requestSheetsApi = async ({ spreadsheetId, path, method = "GET", query, body, accessToken, apiMethod }) => {
   const headers = await getAuthHeaders(accessToken, getSheetsAuth);
   if (!headers) {
     return { ok: false, status: 500, data: { error: "Sheets API is not configured for this server or user." } };
   }
   const url = buildSheetsUrl(spreadsheetId, path, query);
-  const res = await fetch(url, {
+  return requestGoogleApi({
+    apiMethod,
+    url,
     method,
-    headers: {
-      ...headers,
-      "Content-Type": "application/json",
-    },
-    body: body ? JSON.stringify(body) : undefined,
+    headers,
+    body,
   });
-  const contentType = res.headers.get("content-type") || "";
-  let payload = null;
-  if (contentType.includes("application/json")) {
-    payload = await res.json().catch(() => null);
-  } else {
-    payload = await res.text().catch(() => null);
-  }
-  return { ok: res.ok, status: res.status, data: payload };
 };
 
 const ensureSheetExists = async (spreadsheetId, sheetTitle, accessToken) => {
@@ -212,6 +273,7 @@ const ensureSheetExists = async (spreadsheetId, sheetTitle, accessToken) => {
     path: "",
     query: { fields: "sheets.properties" },
     accessToken,
+    apiMethod: "sheets.spreadsheets.get",
   });
   if (!meta.ok) return meta;
   const sheets = meta.data?.sheets || [];
@@ -225,6 +287,7 @@ const ensureSheetExists = async (spreadsheetId, sheetTitle, accessToken) => {
       requests: [{ addSheet: { properties: { title: sheetTitle } } }],
     },
     accessToken,
+    apiMethod: "sheets.spreadsheets.batchUpdate",
   });
 };
 
@@ -232,7 +295,11 @@ const normalizeRows = (headers, rows) =>
   rows.map((row) => headers.map((header) => (row && row[header] !== undefined ? row[header] : "")));
 
 app.get("/sheets/status", (req, res) => {
+  diagLog("route entry: GET /sheets/status");
   const accessToken = getAccessTokenFromRequest(req);
+  const diagnostics = getAuthDiagnostics(req);
+  diagLog("auth path", diagnostics.authPath);
+  diagLog("auth inputs present", diagnostics.authInputs);
   if (accessToken) {
     res.json({
       configured: true,
@@ -253,6 +320,10 @@ app.get("/sheets/status", (req, res) => {
 });
 
 app.get("/sheets/recent", (req, res) => {
+  diagLog("route entry: GET /sheets/recent");
+  const diagnostics = getAuthDiagnostics(req);
+  diagLog("auth path", diagnostics.authPath);
+  diagLog("auth inputs present", diagnostics.authInputs);
   res.json({
     files: [],
     disabled: true,
@@ -261,6 +332,7 @@ app.get("/sheets/recent", (req, res) => {
 });
 
 app.post("/sheets/sync", async (req, res) => {
+  diagLog("route entry: POST /sheets/sync");
   const { spreadsheetId, sheetTitle, headers, rows, mode } = req.body || {};
   if (!spreadsheetId || !sheetTitle || !Array.isArray(headers) || !Array.isArray(rows)) {
     res.status(400).json({ error: "Missing spreadsheetId, sheetTitle, headers, or rows." });
@@ -268,7 +340,10 @@ app.post("/sheets/sync", async (req, res) => {
   }
 
   try {
-    const accessToken = getAccessTokenFromRequest(req);
+    const diagnostics = getAuthDiagnostics(req);
+    diagLog("auth path", diagnostics.authPath);
+    diagLog("auth inputs present", diagnostics.authInputs);
+    const accessToken = diagnostics.accessToken;
     const ensureRes = await ensureSheetExists(spreadsheetId, sheetTitle, accessToken);
     if (!ensureRes.ok) {
       res.status(ensureRes.status).json(ensureRes.data || { error: "Unable to access spreadsheet." });
@@ -284,6 +359,7 @@ app.post("/sheets/sync", async (req, res) => {
         path: `/values/${range}:clear`,
         method: "POST",
         accessToken,
+        apiMethod: "sheets.spreadsheets.values.clear",
       });
 
       const payloadValues = [headers, ...values];
@@ -294,6 +370,7 @@ app.post("/sheets/sync", async (req, res) => {
         query: { valueInputOption: "RAW" },
         body: { values: payloadValues },
         accessToken,
+        apiMethod: "sheets.spreadsheets.values.update",
       });
       res.status(updateRes.ok ? 200 : updateRes.status).json({
         ok: updateRes.ok,
@@ -307,6 +384,7 @@ app.post("/sheets/sync", async (req, res) => {
       path: `/values/${range}`,
       query: { majorDimension: "ROWS" },
       accessToken,
+      apiMethod: "sheets.spreadsheets.values.get",
     });
     const hasHeader = Array.isArray(headerCheck.data?.values) && headerCheck.data.values.length > 0;
     const payloadValues = hasHeader ? values : [headers, ...values];
@@ -323,6 +401,7 @@ app.post("/sheets/sync", async (req, res) => {
       query: { valueInputOption: "RAW", insertDataOption: "INSERT_ROWS" },
       body: { values: payloadValues },
       accessToken,
+      apiMethod: "sheets.spreadsheets.values.append",
     });
 
     res.status(appendRes.ok ? 200 : appendRes.status).json({
@@ -336,6 +415,7 @@ app.post("/sheets/sync", async (req, res) => {
 });
 
 app.post("/sheets/read", async (req, res) => {
+  diagLog("route entry: POST /sheets/read");
   const { spreadsheetId, sheetTitle } = req.body || {};
   if (!spreadsheetId || !sheetTitle) {
     res.status(400).json({ error: "Missing spreadsheetId or sheetTitle." });
@@ -343,13 +423,17 @@ app.post("/sheets/read", async (req, res) => {
   }
 
   try {
-    const accessToken = getAccessTokenFromRequest(req);
+    const diagnostics = getAuthDiagnostics(req);
+    diagLog("auth path", diagnostics.authPath);
+    diagLog("auth inputs present", diagnostics.authInputs);
+    const accessToken = diagnostics.accessToken;
     const range = encodeURIComponent(sheetTitle);
     const readRes = await requestSheetsApi({
       spreadsheetId,
       path: `/values/${range}`,
       query: { majorDimension: "ROWS" },
       accessToken,
+      apiMethod: "sheets.spreadsheets.values.get",
     });
 
     if (!readRes.ok) {
@@ -375,6 +459,65 @@ app.post("/sheets/read", async (req, res) => {
     console.error("Sheets read failed:", error);
     res.status(500).json({ error: "Sheets read failed." });
   }
+});
+
+app.get("/debug/google", async (req, res) => {
+  diagLog("route entry: GET /debug/google");
+  const diagnostics = getAuthDiagnostics(req);
+  diagLog("auth path", diagnostics.authPath);
+  diagLog("auth inputs present", diagnostics.authInputs);
+
+  const spreadsheetId = process.env.DIAGNOSTICS_SHEET_ID;
+  const accessToken = diagnostics.accessToken;
+  let response = null;
+  let apiMethod = "";
+
+  if (spreadsheetId) {
+    apiMethod = "sheets.spreadsheets.get";
+    const url = buildSheetsUrl(spreadsheetId, "", { fields: "properties.title" });
+    const headers = await getAuthHeaders(accessToken, getSheetsAuth);
+    if (!headers) {
+      res.status(500).json({
+        ok: false,
+        authPath: diagnostics.authPath,
+        tokenPresent: Boolean(accessToken),
+        scopes: null,
+        error: { status: 500, message: "Sheets API is not configured for this server or user." },
+      });
+      return;
+    }
+    response = await requestGoogleApi({ apiMethod, url, headers });
+  } else {
+    apiMethod = "drive.about.get";
+    const headers = await getAuthHeaders(accessToken, getDriveAuth);
+    if (!headers) {
+      res.status(500).json({
+        ok: false,
+        authPath: diagnostics.authPath,
+        tokenPresent: Boolean(accessToken),
+        scopes: null,
+        error: { status: 500, message: "Drive API is not configured for this server or user." },
+      });
+      return;
+    }
+    const url = new URL("https://www.googleapis.com/drive/v3/about");
+    url.searchParams.set("fields", "user,storageQuota");
+    response = await requestGoogleApi({ apiMethod, url, headers });
+  }
+
+  res.status(response.ok ? 200 : response.status).json({
+    ok: response.ok,
+    authPath: diagnostics.authPath,
+    tokenPresent: Boolean(accessToken),
+    scopes: null,
+    error: response.ok
+      ? null
+      : {
+          status: response.status,
+          message: response.data?.error?.message || "Google API request failed.",
+          responseData: response.data,
+        },
+  });
 });
 
 app.get("/apify/token", (req, res) => {
