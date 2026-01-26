@@ -2214,7 +2214,7 @@ export default function App() {
       if (stopRef.current) break;
     }
 
-    masterHeaders.add('keywords');
+    masterHeaders.add('keyword');
     const exportedHeaders = Array.from(masterHeaders);
 
     setWatchdogExportStatus('Fetching dataset items...');
@@ -2242,8 +2242,8 @@ export default function App() {
 
             for (const item of items) {
               const rowObj = {};
-              // Inject keywords column (preserved)
-              const enriched = { ...item, keywords: job.keyword };
+              // Inject keyword column (preserved)
+              const enriched = { ...item, keyword: job.keyword };
               const flattened = flattenRecord(enriched);
 
               for (const fieldName of exportedHeaders) {
@@ -2491,18 +2491,50 @@ export default function App() {
       setStatus('Deduplicating CSV...');
       setProgress(35);
 
+      const keywordColumn = 'keyword';
       const seen = new Set();
       const deduped = [];
+      const dedupedMap = new Map();
+      let maxKeywords = 0;
       let dupRemoved = 0;
 
       for (const row of allRows) {
         if (stopRef.current) throw new Error('Stopped by user.');
         const key = safeToString(row[dedupColumn]).trim();
-        if (seen.has(key)) dupRemoved++;
-        else {
+        const rowKeyword = safeToString(row[keywordColumn]).trim();
+        if (seen.has(key)) {
+          dupRemoved++;
+          const existing = dedupedMap.get(key);
+          if (existing && rowKeyword) existing.keywords.add(rowKeyword);
+        } else {
           seen.add(key);
-          deduped.push(row);
+          const keywordSet = new Set();
+          if (rowKeyword) keywordSet.add(rowKeyword);
+          dedupedMap.set(key, { row: { ...row }, keywords: keywordSet });
         }
+      }
+
+      for (const { row, keywords } of dedupedMap.values()) {
+        const list = Array.from(keywords);
+        maxKeywords = Math.max(maxKeywords, list.length);
+        const updatedRow = { ...row };
+        updatedRow[keywordColumn] = list[0] || '';
+        for (let i = 1; i < list.length; i += 1) {
+          updatedRow[`${keywordColumn}_${i + 1}`] = list[i];
+        }
+        deduped.push(updatedRow);
+      }
+
+      if (maxKeywords > 1) {
+        setHeaders((prev) => {
+          const baseHeaders = prev.filter(
+            (header) => header !== keywordColumn && !header.startsWith(`${keywordColumn}_`)
+          );
+          const keywordHeaders = Array.from({ length: maxKeywords }, (_, idx) =>
+            idx === 0 ? keywordColumn : `${keywordColumn}_${idx + 1}`
+          );
+          return [...baseHeaders, ...keywordHeaders];
+        });
       }
 
       setStats((s) => ({
