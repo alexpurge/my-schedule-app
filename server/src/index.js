@@ -138,6 +138,15 @@ app.use((req, res, next) => {
   next();
 });
 
+app.get("/apify/token", (req, res) => {
+  const token = process.env.APIFY_API_TOKEN || process.env.APIFY_TOKEN;
+  if (!token) {
+    res.status(500).send("Apify token is not configured on the server.");
+    return;
+  }
+  res.json({ token });
+});
+
 const port = process.env.PORT || 3001;
 app.listen(port, () => {
   console.log("Server running on http://localhost:" + port);
