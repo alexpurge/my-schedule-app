@@ -615,6 +615,8 @@ export default function App() {
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
   const [googleScriptReady, setGoogleScriptReady] = useState(false);
   const [googleReady, setGoogleReady] = useState(false);
+  const [googleButtonReady, setGoogleButtonReady] = useState(false);
+  const googleButtonRef = useRef(null);
   const [authState, setAuthState] = useState({
     loading: true,
     authenticated: false,
@@ -727,7 +729,33 @@ export default function App() {
     setGoogleReady(true);
   }, [authState.authenticated, googleClientId, googleScriptReady, handleGoogleCredential]);
 
+  const renderGoogleButton = useCallback(() => {
+    const container = googleButtonRef.current;
+    const google = window.google;
+    if (!container || !google?.accounts?.id) return;
+    const width = Math.max(200, Math.floor(container.offsetWidth || 0));
+    container.innerHTML = '';
+    google.accounts.id.renderButton(container, {
+      type: 'standard',
+      theme: 'outline',
+      size: 'large',
+      text: 'signin_with',
+      shape: 'pill',
+      width,
+    });
+    setGoogleButtonReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!googleReady) return;
+    renderGoogleButton();
+    const handleResize = () => renderGoogleButton();
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [googleReady, renderGoogleButton]);
+
   const handleLoginClick = useCallback(() => {
+    if (googleButtonReady) return;
     if (!googleReady) {
       setAuthState((prev) => ({
         ...prev,
@@ -755,7 +783,7 @@ export default function App() {
         }));
       }
     });
-  }, [googleReady]);
+  }, [googleButtonReady, googleReady]);
 
   /**
    * ============================================================
@@ -2342,12 +2370,21 @@ export default function App() {
             {authState.error && <div className="authError">{authState.error}</div>}
           </div>
         )}
-        <button
+        <div
           className="authSplineLoginHitbox"
-          type="button"
+          role="button"
+          tabIndex={0}
           onClick={handleLoginClick}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' || event.key === ' ') {
+              event.preventDefault();
+              handleLoginClick();
+            }
+          }}
           aria-label="Sign in with Google"
-        />
+        >
+          <div className="authGoogleButton" ref={googleButtonRef} />
+        </div>
       </div>
     );
   }
