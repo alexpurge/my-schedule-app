@@ -833,9 +833,6 @@ transform: scale(1.5);
   overflow: hidden;
   min-height: 600px;
 }
-.dashboardSplinePanel[data-running="false"] iframe{
-  opacity: 0;
-}
 .dashboardSplinePanel iframe{
   width: 100%;
   height: 100%;
@@ -848,7 +845,7 @@ transform: scale(1.5);
   transition: opacity 0.6s ease;
   will-change: opacity;
 }
-.dashboardSplinePanel[data-loaded="true"] iframe{
+.dashboardSplinePanel[data-running="true"][data-loaded="true"] iframe{
   opacity: 1;
 }
 
