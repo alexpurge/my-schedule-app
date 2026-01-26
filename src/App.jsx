@@ -628,6 +628,7 @@ export default function App() {
   const [googleButtonReady, setGoogleButtonReady] = useState(false);
   const googleButtonRef = useRef(null);
   const sheetsTokenClientRef = useRef(null);
+  const [sheetsTokenClientReady, setSheetsTokenClientReady] = useState(false);
   const [authState, setAuthState] = useState({
     loading: true,
     authenticated: false,
@@ -776,6 +777,7 @@ export default function App() {
       scope: googleSheetsScopes.join(' '),
       callback: () => {},
     });
+    setSheetsTokenClientReady(true);
   }, [googleClientId, googleScriptReady, googleSheetsScopes]);
 
   const requestSheetsAccessToken = useCallback((prompt = '') => {
@@ -874,10 +876,10 @@ export default function App() {
       return;
     }
     if (initialScopesRequestedRef.current) return;
-    if (!googleScriptReady || !sheetsTokenClientRef.current) return;
+    if (!googleScriptReady || !sheetsTokenClientReady) return;
     initialScopesRequestedRef.current = true;
     ensureSheetsAccessToken('consent').catch(() => {});
-  }, [authState.authenticated, ensureSheetsAccessToken, googleScriptReady]);
+  }, [authState.authenticated, ensureSheetsAccessToken, googleScriptReady, sheetsTokenClientReady]);
 
   const renderGoogleButton = useCallback(() => {
     const container = googleButtonRef.current;
