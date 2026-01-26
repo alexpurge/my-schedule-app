@@ -101,6 +101,47 @@ input:-webkit-autofill:active{
   overflow: hidden;
 }
 
+.welcomeOverlay{
+  position: fixed;
+  inset: 0;
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  opacity: 0;
+}
+
+.welcomeOverlay.is-visible{
+  opacity: 1;
+}
+
+.welcomeOverlay.fade-in{
+  animation: welcomeFadeIn .5s ease forwards;
+}
+
+.welcomeOverlay.fade-out{
+  animation: welcomeFadeOut .5s ease forwards;
+}
+
+.welcomeOverlayText{
+  font-family: 'JetBrains Mono', 'Courier New', monospace;
+  color: #fff;
+  font-size: clamp(20px, 4vw, 36px);
+  letter-spacing: 0.02em;
+  text-align: center;
+}
+
+@keyframes welcomeFadeIn{
+  from{ opacity: 0; }
+  to{ opacity: 1; }
+}
+
+@keyframes welcomeFadeOut{
+  from{ opacity: 1; }
+  to{ opacity: 0; }
+}
+
 .authSplineFrame{
   position: absolute;
   inset: 0;

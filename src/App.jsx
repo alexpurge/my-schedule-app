@@ -622,6 +622,10 @@ export default function App() {
     authenticated: false,
     error: null,
   });
+  const [authUser, setAuthUser] = useState(null);
+  const [welcomePhase, setWelcomePhase] = useState('idle');
+  const [welcomeText, setWelcomeText] = useState('');
+  const welcomeStartedRef = useRef(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -642,6 +646,9 @@ export default function App() {
             authenticated: Boolean(data.authenticated),
             error: null,
           });
+          if (data.authenticated) {
+            setAuthUser(data.name || data.email || null);
+          }
         }
       } catch (err) {
         if (isMounted) {
@@ -701,6 +708,7 @@ export default function App() {
         throw new Error(data.error || 'Sign in was not authorized.');
       }
       setAuthState({ loading: false, authenticated: true, error: null });
+      setAuthUser(data.name || data.email || null);
     } catch (err) {
       setAuthState({
         loading: false,
@@ -709,6 +717,54 @@ export default function App() {
       });
     }
   }, []);
+
+  useEffect(() => {
+    if (!authState.authenticated || welcomeStartedRef.current) return;
+    welcomeStartedRef.current = true;
+    setWelcomeText('');
+    setWelcomePhase('fade-in');
+  }, [authState.authenticated]);
+
+  useEffect(() => {
+    if (welcomePhase !== 'fade-in') return;
+    const timer = setTimeout(() => {
+      setWelcomePhase('typing');
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [welcomePhase]);
+
+  useEffect(() => {
+    if (welcomePhase !== 'typing') return undefined;
+    const name = authUser || 'there';
+    const fullText = `Welcome ${name}`;
+    let index = 0;
+    setWelcomeText('');
+    const interval = setInterval(() => {
+      index += 1;
+      setWelcomeText(fullText.slice(0, index));
+      if (index >= fullText.length) {
+        clearInterval(interval);
+        setWelcomePhase('hold');
+      }
+    }, 50);
+    return () => clearInterval(interval);
+  }, [welcomePhase, authUser]);
+
+  useEffect(() => {
+    if (welcomePhase !== 'hold') return;
+    const timer = setTimeout(() => {
+      setWelcomePhase('fade-out');
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [welcomePhase]);
+
+  useEffect(() => {
+    if (welcomePhase !== 'fade-out') return;
+    const timer = setTimeout(() => {
+      setWelcomePhase('done');
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [welcomePhase]);
 
   useEffect(() => {
     if (authState.authenticated || !googleScriptReady) return;
@@ -2351,6 +2407,16 @@ export default function App() {
     };
   }, [watchdogJobs]);
 
+  const showWelcomeOverlay = welcomePhase !== 'idle' && welcomePhase !== 'done';
+  const welcomeOverlayClassName = [
+    'welcomeOverlay',
+    welcomePhase === 'fade-in' ? 'fade-in' : '',
+    welcomePhase === 'fade-out' ? 'fade-out' : '',
+    welcomePhase === 'typing' || welcomePhase === 'hold' ? 'is-visible' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
   if (!authState.authenticated) {
     return (
       <div className="pipelineShell authShell" data-theme={theme}>
@@ -2394,6 +2460,11 @@ export default function App() {
   return (
     <div className="pipelineShell" data-theme={theme}>
       <GlobalStyles />
+      {showWelcomeOverlay && (
+        <div className={welcomeOverlayClassName} aria-live="polite" aria-label="Welcome message">
+          <div className="welcomeOverlayText">{welcomeText}</div>
+        </div>
+      )}
 
       {/* SIDEBAR */}
       <Sidebar
