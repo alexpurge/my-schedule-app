@@ -1585,7 +1585,7 @@ export default function App() {
    */
   const [isRunning, setIsRunning] = useState(false);
   const [stage, setStage] = useState('idle'); // idle | watchdog | export | dedup | purify | filter | apify | fetch | sort | done | error
-  const [status, setStatus] = useState('Configure Watchdog inputs, then run.');
+  const [status, setStatus] = useState('Configure bulk initial pull inputs, then run.');
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState(null);
 
@@ -1696,7 +1696,7 @@ export default function App() {
 
     setIsRunning(false);
     setStage('idle');
-    setStatus('Configure Watchdog inputs, then run.');
+    setStatus('Configure bulk initial pull inputs, then run.');
     setProgress(0);
     setError(null);
 
@@ -1884,7 +1884,7 @@ export default function App() {
       watchdogExportedRows: 0,
     }));
 
-    addLog(`Watchdog Started. Queue size: ${newJobs.length}. Concurrency: ${watchdogMaxConcurrency}`, 'success');
+    addLog(`Bulk initial pull started. Queue size: ${newJobs.length}. Concurrency: ${watchdogMaxConcurrency}`, 'success');
 
     // Helper: retry logic (preserved)
     const handleRetryOrFail = async (job, reason) => {
@@ -1954,7 +1954,7 @@ export default function App() {
 
       try {
         const tryNum = (job.retryCount || 0) + 1;
-        addLog(`Starting Watchdog run for "${job.keyword}" (Attempt ${tryNum})...`, 'info');
+        addLog(`Starting bulk initial pull run for "${job.keyword}" (Attempt ${tryNum})...`, 'info');
 
         const response = await fetch(
           `https://api.apify.com/v2/acts/${watchdogActorId}/runs?token=${apiKey}&${options.toString()}`,
@@ -1974,7 +1974,7 @@ export default function App() {
           datasetId: data.data.defaultDatasetId,
         });
 
-        addLog(`Watchdog Run Started for "${job.keyword}" (ID: ${data.data.id})`, 'success');
+        addLog(`Bulk initial pull run started for "${job.keyword}" (ID: ${data.data.id})`, 'success');
       } catch (error) {
         await handleRetryOrFail(job, `Start Failed: ${error.message}`);
       }
@@ -2148,7 +2148,7 @@ export default function App() {
       const pendingNow = watchdogJobsRef.current.filter((j) => j.status === 'PENDING').length;
 
       if (activeNow === 0 && retryNow === 0 && pendingNow === 0 && watchdogJobsRef.current.length > 0) {
-        addLog('All Watchdog jobs completed.', 'success');
+        addLog('All bulk initial pull jobs completed.', 'success');
         break;
       }
 
@@ -2176,7 +2176,7 @@ export default function App() {
     // -------- EXPORT (Single CSV internally; continues pipeline) --------
     setWatchdogExporting(true);
     setWatchdogExportStatus('Analyzing schema...');
-    addLog('Watchdog Export: analyzing schema...', 'system');
+    addLog('Bulk initial pull export: analyzing schema...', 'system');
 
     const jobsWithData = finalJobs.filter((j) => j.datasetId);
     if (jobsWithData.length === 0) {
@@ -2225,7 +2225,7 @@ export default function App() {
     const exportedHeaders = Array.from(masterHeaders);
 
     setWatchdogExportStatus('Fetching dataset items...');
-    addLog(`Watchdog Export: fetching datasets (${jobsWithData.length})...`, 'system');
+    addLog(`Bulk initial pull export: fetching datasets (${jobsWithData.length})...`, 'system');
 
     // Phase 2: Stream fetch (memory-safe pattern preserved; single CSV internal)
     const DATA_BATCH = 2;
@@ -2280,7 +2280,7 @@ export default function App() {
     setWatchdogExportStatus('');
 
     if (stopRef.current) throw new Error('Stopped by user.');
-    if (allRows.length === 0) throw new Error('Watchdog export produced 0 rows.');
+    if (allRows.length === 0) throw new Error('Bulk initial pull export produced 0 rows.');
 
     // Store exported "CSV" (internally) as pipeline input
     setHeaders(exportedHeaders);
@@ -2293,7 +2293,7 @@ export default function App() {
       inputRows: allRows.length,
     }));
 
-    addLog(`Watchdog Export complete: ${allRows.length} row(s).`, 'success');
+    addLog(`Bulk initial pull export complete: ${allRows.length} row(s).`, 'success');
 
     return { exportedHeaders, allRows };
   }, [
@@ -2524,8 +2524,8 @@ export default function App() {
   const stopPipeline = useCallback(async () => {
     if (!isRunning) return;
     stopRef.current = true;
-    setStatus('Stopping... aborting active Watchdog runs.');
-    addLog('STOP requested by user. Attempting to abort active Watchdog runs...', 'warning');
+    setStatus('Stopping... aborting active bulk initial pull runs.');
+    addLog('STOP requested by user. Attempting to abort active bulk initial pull runs...', 'warning');
 
     // Abort active Watchdog runs (preserved)
     const activeJobs = watchdogJobsRef.current.filter((j) => j.status === 'RUNNING' || j.status === 'STARTING');
@@ -2563,7 +2563,7 @@ export default function App() {
 
     setIsRunning(true);
     setStage('watchdog');
-    setStatus('Running Apify Bulk Watchdog...');
+    setStatus('Running Bulk Initial Pull...');
     setProgress(1);
     addLog('--- PIPELINE START ---', 'system');
 
@@ -2581,9 +2581,9 @@ export default function App() {
       const hasFilter = allRows.length ? Object.prototype.hasOwnProperty.call(allRows[0], filterColumn) : false;
       const hasUrl = allRows.length ? Object.prototype.hasOwnProperty.call(allRows[0], urlColumn) : false;
 
-      if (!hasDedup) throw new Error(`Deduplicate column not found in Watchdog export: "${dedupColumn}"`);
-      if (!hasFilter) throw new Error(`Master Filter column not found in Watchdog export: "${filterColumn}"`);
-      if (!hasUrl) throw new Error(`URL column not found in Watchdog export: "${urlColumn}"`);
+      if (!hasDedup) throw new Error(`Deduplicate column not found in bulk initial pull export: "${dedupColumn}"`);
+      if (!hasFilter) throw new Error(`Category Filter column not found in bulk initial pull export: "${filterColumn}"`);
+      if (!hasUrl) throw new Error(`URL column not found in bulk initial pull export: "${urlColumn}"`);
 
       // -----------------------------
       // 1) DEDUPLICATE
@@ -2679,7 +2679,7 @@ export default function App() {
       setPurifiedRows(purified);
 
       addLog(
-        `CSV Purifier: removed ${purifierRemoved} row(s) containing foreign script.`,
+        `Foreign Language Detector: removed ${purifierRemoved} row(s) containing foreign script.`,
         purifierRemoved ? 'warning' : 'success'
       );
 
@@ -2687,7 +2687,7 @@ export default function App() {
       // 3) MASTER FILTER (HARD-CODED KEYWORDS)
       // -----------------------------
       setStage('filter');
-      setStatus('Master Filtering (hard-coded keywords)...');
+      setStatus('Category Filtering (hard-coded keywords)...');
       setProgress(48);
 
       const kept = [];
@@ -2737,12 +2737,12 @@ export default function App() {
       setFilteredRows(kept);
 
       addLog(
-        `CSV Master Filter: kept ${kept.length}, removed ${masterFilterRemoved} (column "${filterColumn}", mode "${matchMode}").`,
+        `Category Filter: kept ${kept.length}, removed ${masterFilterRemoved} (column "${filterColumn}", mode "${matchMode}").`,
         kept.length ? 'success' : 'warning'
       );
 
       if (kept.length === 0) {
-        throw new Error('Master Filter produced 0 rows. Nothing to send to Apify.');
+        throw new Error('Category Filter produced 0 rows. Nothing to send to Apify.');
       }
 
       // -----------------------------
@@ -3081,7 +3081,7 @@ export default function App() {
 
         {canDropdown && !found && (
           <div className="smallNote">
-            <b>Note:</b> This column isn’t present in the latest Watchdog export.
+            <b>Note:</b> This column isn’t present in the latest bulk initial pull export.
           </div>
         )}
       </div>
@@ -3232,7 +3232,7 @@ export default function App() {
                         placeholder={PRESET_DEDUP_COLUMN}
                       />
                       <ColumnField
-                        label="Master Filter column"
+                        label="Category Filter column"
                         value={filterColumn}
                         onChange={setFilterColumn}
                         placeholder={PRESET_FILTER_COLUMN}
@@ -3290,7 +3290,7 @@ export default function App() {
                         Note
                       </div>
                       <div className="cardHeaderTitle" style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
-                        Columns populate after Watchdog export
+                        Columns populate after bulk initial pull export
                       </div>
                     </div>
                     <div className="cardBody">
@@ -3314,7 +3314,7 @@ export default function App() {
                     <div className="cardHeader">
                       <div className="cardHeaderTitle">
                         <Layers size={16} style={{ color: 'var(--color-primary)' }} />
-                        Apify Bulk Watchdog
+                        Bulk Initial Pull
                       </div>
                       <div className="cardHeaderTitle" style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
                         Export auto-continues
@@ -3537,7 +3537,7 @@ export default function App() {
                             size={14}
                             style={{ marginRight: 6, verticalAlign: 'text-bottom', color: 'var(--color-primary)' }}
                           />
-                          Pages Scraper: Apify Proxy is disabled (custom proxy only). Watchdog proxy mode is selectable above.
+                          Pages Scraper: Apify Proxy is disabled (custom proxy only). Bulk initial pull proxy mode is selectable above.
                         </div>
                       </div>
 
@@ -3605,14 +3605,14 @@ export default function App() {
                         Pipeline Summary
                       </div>
                       <div className="cardHeaderTitle" style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
-                        {keywordCount} master filter keywords loaded
+                        {keywordCount} category filter keywords loaded
                       </div>
                     </div>
 
                     <div className="cardBody">
                       <div className="tiles">
                         <div className="tile">
-                          <div className="tileK">Watchdog Rows</div>
+                          <div className="tileK">Bulk Initial Pull Rows</div>
                           <div className="tileV">{stats.watchdogExportedRows}</div>
                           <div className="tileSub">Auto-exported into pipeline</div>
                         </div>
@@ -3620,7 +3620,7 @@ export default function App() {
                         <div className="tile">
                           <div className="tileK">Filtered Out</div>
                           <div className="tileV red">{filteredOutTotal}</div>
-                          <div className="tileSub">Dedup + Purify + Master</div>
+                          <div className="tileSub">Dedup + Foreign Language + Category</div>
                         </div>
 
                         <div className="tile">
@@ -3632,7 +3632,7 @@ export default function App() {
 
                       <div className="breakGrid">
                         <div className="breakItem">
-                          <div className="breakH">0) Watchdog</div>
+                          <div className="breakH">Bulk Initial Pull</div>
                           <div className="breakLine">
                             <span>Keywords</span> <span className="mono">{stats.watchdogKeywords}</span>
                           </div>
@@ -3648,7 +3648,7 @@ export default function App() {
                             style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
                             onClick={() => downloadCsvSnapshot('watchdog', rows)}
                             disabled={!rows.length}
-                            title="Download Watchdog export CSV"
+                            title="Download bulk initial pull export CSV"
                           >
                             <Download size={14} />
                             Download CSV
@@ -3656,7 +3656,7 @@ export default function App() {
                         </div>
 
                         <div className="breakItem">
-                          <div className="breakH">1) Deduplicator</div>
+                          <div className="breakH">Deduplicator</div>
                           <div className="breakLine">
                             <span>Removed</span> <span className="mono">{stats.dedupRemoved}</span>
                           </div>
@@ -3677,7 +3677,7 @@ export default function App() {
                         </div>
 
                         <div className="breakItem">
-                          <div className="breakH">2) CSV Purifier</div>
+                          <div className="breakH">Foreign Language Detector</div>
                           <div className="breakLine">
                             <span>Removed</span> <span className="mono">{stats.purifierRemoved}</span>
                           </div>
@@ -3698,7 +3698,7 @@ export default function App() {
                         </div>
 
                         <div className="breakItem">
-                          <div className="breakH">3) Master Filter</div>
+                          <div className="breakH">Category Filter</div>
                           <div className="breakLine">
                             <span>Removed</span> <span className="mono">{stats.masterFilterRemoved}</span>
                           </div>
@@ -3711,7 +3711,7 @@ export default function App() {
                             style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
                             onClick={() => downloadCsvSnapshot('master_filter', filteredRows)}
                             disabled={!filteredRows.length}
-                            title="Download master filter CSV"
+                            title="Download category filter CSV"
                           >
                             <Download size={14} />
                             Download CSV
@@ -3719,7 +3719,7 @@ export default function App() {
                         </div>
 
                         <div className="breakItem">
-                          <div className="breakH">4) Apify Runner</div>
+                          <div className="breakH">Profile Puller</div>
                           <div className="breakLine">
                             <span>URLs</span> <span className="mono">{stats.urlsForApify}</span>
                           </div>
@@ -3743,7 +3743,7 @@ export default function App() {
                       </div>
 
                       <div className="breakItem" style={{ marginTop: 12 }}>
-                        <div className="breakH">5) AU Number Sorter</div>
+                        <div className="breakH">AU Number Sorter</div>
                         <div className="sortPills">
                           <div className="sortPill">
                             <div className="sortK">Mobiles</div>
@@ -3812,7 +3812,7 @@ export default function App() {
                     <div className="cardHeader">
                       <div className="cardHeaderTitle">
                         <Layers size={16} style={{ color: 'var(--color-primary)' }} />
-                        Watchdog Queue
+                        Bulk Initial Pull Queue
                       </div>
                       <div className="cardHeaderTitle" style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
                         {watchdogUiStats.total
@@ -3857,7 +3857,7 @@ export default function App() {
                             {watchdogJobs.length === 0 && (
                               <tr>
                                 <td className="td" colSpan={5} style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>
-                                  No Watchdog jobs yet. Run the pipeline to start.
+                                  No bulk initial pull jobs yet. Run the pipeline to start.
                                 </td>
                               </tr>
                             )}
