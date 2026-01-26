@@ -613,9 +613,8 @@ export default function App() {
    * ============================================================
    */
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-  const googleButtonRef = useRef(null);
-  const googleButtonRendered = useRef(false);
   const [googleScriptReady, setGoogleScriptReady] = useState(false);
+  const [googleReady, setGoogleReady] = useState(false);
   const [authState, setAuthState] = useState({
     loading: true,
     authenticated: false,
@@ -719,21 +718,44 @@ export default function App() {
       }));
       return;
     }
-    if (!googleButtonRef.current || googleButtonRendered.current) return;
     const google = window.google;
     if (!google?.accounts?.id) return;
     google.accounts.id.initialize({
       client_id: googleClientId,
       callback: handleGoogleCredential,
     });
-    google.accounts.id.renderButton(googleButtonRef.current, {
-      theme: 'outline',
-      size: 'large',
-      shape: 'pill',
-      text: 'signin_with',
-    });
-    googleButtonRendered.current = true;
+    setGoogleReady(true);
   }, [authState.authenticated, googleClientId, googleScriptReady, handleGoogleCredential]);
+
+  const handleLoginClick = useCallback(() => {
+    if (!googleReady) {
+      setAuthState((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Google Sign In is still loading. Please wait a moment and try again.',
+      }));
+      return;
+    }
+    const google = window.google;
+    if (!google?.accounts?.id) {
+      setAuthState((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Google Sign In is unavailable right now.',
+      }));
+      return;
+    }
+    setAuthState((prev) => ({ ...prev, loading: true, error: null }));
+    google.accounts.id.prompt((notification) => {
+      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+        setAuthState((prev) => ({
+          ...prev,
+          loading: false,
+          error: 'Google Sign In was closed or blocked. Please try again.',
+        }));
+      }
+    });
+  }, [googleReady]);
 
   /**
    * ============================================================
@@ -2305,12 +2327,25 @@ export default function App() {
     return (
       <div className="pipelineShell authShell" data-theme={theme}>
         <GlobalStyles />
-        <div className="authCard">
-          <div className="authTitle">Sign in to continue</div>
-          <p className="authSubtitle">Use your approved Google account to access the scheduler.</p>
-          <div className="authButton" ref={googleButtonRef} />
-          {authState.loading && <div className="authStatus">Checking authentication…</div>}
-          {authState.error && <div className="authError">{authState.error}</div>}
+        <div className="authSplineFrame" aria-hidden="true">
+          <iframe
+            title="Reactive Orb background"
+            src="https://my.spline.design/reactiveorb-3gF6RAL6Ew7QKrNvj2iYlMvu/"
+            loading="eager"
+            referrerPolicy="no-referrer"
+            allow="autoplay; fullscreen"
+          />
+        </div>
+        <div className="authOverlay">
+          <div className="authCard">
+            <div className="authTitle">Sign in to continue</div>
+            <p className="authSubtitle">Use your approved Google account to access the scheduler.</p>
+            <button className="authLoginButton" type="button" onClick={handleLoginClick}>
+              Login
+            </button>
+            {authState.loading && <div className="authStatus">Checking authentication…</div>}
+            {authState.error && <div className="authError">{authState.error}</div>}
+          </div>
         </div>
       </div>
     );
