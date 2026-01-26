@@ -14,7 +14,9 @@ dotenv.config();
 
 const app = express();
 
-const googleClientId = process.env.VITE_GOOGLE_CLIENT_ID;
+const googleClientId =
+  process.env.GOOGLE_CLIENT_ID ||
+  process.env.VITE_GOOGLE_CLIENT_ID;
 const allowedEmails = (process.env.ALLOWED_EMAILS || "")
   .split(",")
   .map((entry) => entry.trim().toLowerCase())
@@ -69,7 +71,10 @@ app.post("/auth/login", async (req, res) => {
     return;
   }
   if (!googleClientId) {
-    res.status(500).json({ error: "Server missing Google client ID." });
+    res.status(500).json({
+      error:
+        "Server missing Google client ID. Set GOOGLE_CLIENT_ID (preferred) or VITE_GOOGLE_CLIENT_ID in the server environment.",
+    });
     return;
   }
   try {
@@ -98,7 +103,10 @@ app.post("/auth/login", async (req, res) => {
     res.json({ ok: true, email });
   } catch (error) {
     console.error("Google auth error:", error);
-    res.status(401).json({ error: "Invalid Google credential." });
+    const detail = error instanceof Error ? error.message : "Unknown error";
+    res.status(401).json({
+      error: `Invalid Google credential. ${detail}`,
+    });
   }
 });
 
