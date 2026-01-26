@@ -93,6 +93,51 @@ input:-webkit-autofill:active{
   overflow: hidden;
 }
 
+.authShell{
+  align-items: center;
+  justify-content: center;
+  padding: 32px;
+}
+
+.authCard{
+  width: min(420px, 100%);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  padding: 32px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.authTitle{
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.authSubtitle{
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.authButton{
+  display: flex;
+  justify-content: center;
+}
+
+.authStatus{
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.authError{
+  color: #f87171;
+  font-size: 13px;
+}
+
 .sidebar{
   width: 260px;
   flex-shrink: 0;

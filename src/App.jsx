@@ -609,6 +609,134 @@ export default function App() {
 
   /**
    * ============================================================
+   *  AUTH (GOOGLE SIGN-IN GATE)
+   * ============================================================
+   */
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  const googleButtonRef = useRef(null);
+  const googleButtonRendered = useRef(false);
+  const [googleScriptReady, setGoogleScriptReady] = useState(false);
+  const [authState, setAuthState] = useState({
+    loading: true,
+    authenticated: false,
+    error: null,
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const checkSession = async () => {
+      try {
+        const res = await fetch('/auth/me', { credentials: 'include' });
+        if (!res.ok) {
+          if (isMounted) {
+            setAuthState({ loading: false, authenticated: false, error: null });
+          }
+          return;
+        }
+        const data = await res.json();
+        if (isMounted) {
+          setAuthState({
+            loading: false,
+            authenticated: Boolean(data.authenticated),
+            error: null,
+          });
+        }
+      } catch (err) {
+        if (isMounted) {
+          setAuthState({
+            loading: false,
+            authenticated: false,
+            error: 'Unable to check authentication status.',
+          });
+        }
+      }
+    };
+
+    checkSession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (authState.authenticated) return;
+    if (document.getElementById('google-identity-script')) {
+      setGoogleScriptReady(true);
+      return;
+    }
+    const script = document.createElement('script');
+    script.id = 'google-identity-script';
+    script.src = 'https://accounts.google.com/gsi/client';
+    script.async = true;
+    script.defer = true;
+    script.onload = () => setGoogleScriptReady(true);
+    script.onerror = () => {
+      setAuthState((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Failed to load Google Sign In.',
+      }));
+    };
+    document.body.appendChild(script);
+  }, [authState.authenticated]);
+
+  const handleGoogleCredential = useCallback(async (response) => {
+    if (!response?.credential) {
+      setAuthState({ loading: false, authenticated: false, error: 'Google Sign In failed.' });
+      return;
+    }
+    setAuthState((prev) => ({ ...prev, loading: true, error: null }));
+    try {
+      const res = await fetch('/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ credential: response.credential }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Sign in was not authorized.');
+      }
+      setAuthState({ loading: false, authenticated: true, error: null });
+    } catch (err) {
+      setAuthState({
+        loading: false,
+        authenticated: false,
+        error: err instanceof Error ? err.message : 'Sign in failed.',
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (authState.authenticated || !googleScriptReady) return;
+    if (!googleClientId) {
+      setAuthState((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Missing Google client ID configuration.',
+      }));
+      return;
+    }
+    if (!googleButtonRef.current || googleButtonRendered.current) return;
+    const google = window.google;
+    if (!google?.accounts?.id) return;
+    google.accounts.id.initialize({
+      client_id: googleClientId,
+      callback: handleGoogleCredential,
+    });
+    google.accounts.id.renderButton(googleButtonRef.current, {
+      theme: 'outline',
+      size: 'large',
+      shape: 'pill',
+      text: 'signin_with',
+    });
+    googleButtonRendered.current = true;
+  }, [authState.authenticated, googleClientId, googleScriptReady, handleGoogleCredential]);
+
+  /**
+   * ============================================================
    *  NAV (NEW: SETTINGS PAGE)
    * ============================================================
    */
@@ -2156,6 +2284,21 @@ export default function App() {
       abortedFailed: j.filter((x) => x.status === 'ABORTED' || x.status === 'FAILED').length,
     };
   }, [watchdogJobs]);
+
+  if (!authState.authenticated) {
+    return (
+      <div className="pipelineShell authShell" data-theme={theme}>
+        <GlobalStyles />
+        <div className="authCard">
+          <div className="authTitle">Sign in to continue</div>
+          <p className="authSubtitle">Use your approved Google account to access the scheduler.</p>
+          <div className="authButton" ref={googleButtonRef} />
+          {authState.loading && <div className="authStatus">Checking authentication…</div>}
+          {authState.error && <div className="authError">{authState.error}</div>}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="pipelineShell" data-theme={theme}>
