@@ -839,7 +839,7 @@ transform: scale(1.5);
   height: 100%;
   border: 0;
   display: block;
-  transform: translateY(10%) scale(1.1);
+  transform: translateY(-90%, -10%) scale(1.1);
   transform-origin: center;
   pointer-events: none;
   opacity: 1;
