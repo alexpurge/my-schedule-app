@@ -823,14 +823,17 @@ input:-webkit-autofill:active{
   border: none;
   background: transparent;
   box-shadow: none;
-  overflow: visible;
-  min-height: 420px;
+  overflow: hidden;
+  min-height: 520px;
+  margin: -32px 0;
 }
 .dashboardSplinePanel iframe{
   width: 100%;
   height: 100%;
   border: 0;
   display: block;
+  transform: translate(2%, -10%) scale(1.6);
+  transform-origin: center;
 }
 .dashboardSplinePlaceholder{
   position: absolute;
