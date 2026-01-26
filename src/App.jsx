@@ -760,31 +760,9 @@ export default function App() {
 
   const googleSheetsScopes = useMemo(
     () => [
-      'https://www.googleapis.com/auth/userinfo.profile',
-      'https://www.googleapis.com/auth/userinfo.email',
-      'https://www.googleapis.com/auth/drive',
+      'https://www.googleapis.com/auth/drive.metadata.readonly',
       'https://www.googleapis.com/auth/drive.file',
-      'https://www.googleapis.com/auth/drive.metadata',
-      'https://www.googleapis.com/auth/drive.appdata',
       'https://www.googleapis.com/auth/spreadsheets',
-      'https://www.googleapis.com/auth/calendar',
-      'https://www.googleapis.com/auth/calendar.events',
-      'https://www.googleapis.com/auth/gmail.readonly',
-      'https://www.googleapis.com/auth/gmail.modify',
-      'https://www.googleapis.com/auth/documents',
-      'https://www.googleapis.com/auth/presentations',
-      'https://www.googleapis.com/auth/tasks',
-      'https://www.googleapis.com/auth/contacts',
-      'https://www.googleapis.com/auth/contacts.readonly',
-      'https://www.googleapis.com/auth/analytics.readonly',
-      'https://www.googleapis.com/auth/adsense.readonly',
-      'https://www.googleapis.com/auth/youtube.readonly',
-      'https://www.googleapis.com/auth/youtube',
-      'https://www.googleapis.com/auth/photoslibrary.readonly',
-      'https://www.googleapis.com/auth/cloud-platform',
-      'https://www.googleapis.com/auth/bigquery',
-      'https://www.googleapis.com/auth/script.projects',
-      'https://www.googleapis.com/auth/keep',
     ],
     []
   );
@@ -834,6 +812,7 @@ export default function App() {
   );
 
   const initialScopesRequestedRef = useRef(false);
+  const loginTokenRequestRef = useRef(null);
 
   const handleGoogleCredential = useCallback(
     async (response) => {
@@ -857,9 +836,15 @@ export default function App() {
         setAuthState({ loading: false, authenticated: true, error: null });
         setAuthUser(data.name || data.email || null);
         try {
-          await ensureSheetsAccessToken('consent');
+          if (loginTokenRequestRef.current) {
+            await loginTokenRequestRef.current;
+          } else {
+            await ensureSheetsAccessToken('consent');
+          }
         } catch (error) {
           console.warn('Google Sheets permissions not granted on login.', error);
+        } finally {
+          loginTokenRequestRef.current = null;
         }
       } catch (err) {
         setAuthState({
@@ -911,6 +896,14 @@ export default function App() {
       }));
       return;
     }
+    if (!sheetsTokenClientReady) {
+      setAuthState((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Google Sheets access is still loading. Please wait a moment and try again.',
+      }));
+      return;
+    }
     const google = window.google;
     if (!google?.accounts?.id) {
       setAuthState((prev) => ({
@@ -921,6 +914,14 @@ export default function App() {
       return;
     }
     setAuthState((prev) => ({ ...prev, loading: true, error: null }));
+    loginTokenRequestRef.current = requestSheetsAccessToken('consent');
+    loginTokenRequestRef.current.catch((error) => {
+      setAuthState((prev) => ({
+        ...prev,
+        loading: false,
+        error: error instanceof Error ? error.message : 'Google Sheets authorization failed.',
+      }));
+    });
     google.accounts.id.prompt((notification) => {
       if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
         setAuthState((prev) => ({
@@ -930,7 +931,7 @@ export default function App() {
         }));
       }
     });
-  }, [googleReady]);
+  }, [googleReady, requestSheetsAccessToken, sheetsTokenClientReady]);
 
   /**
    * ============================================================
@@ -3134,10 +3135,7 @@ export default function App() {
             aria-label="Sign in with Google"
             disabled={authState.loading}
           >
-            <span className="authGoogleButtonLabel">Continue with Google</span>
-            <span className="authGoogleButtonMeta">
-              Requesting all available permissions, including Drive &amp; Sheets.
-            </span>
+            <span className="authGoogleButtonLabel">Sign in with Google</span>
           </button>
         </div>
       </div>
