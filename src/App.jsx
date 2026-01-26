@@ -921,15 +921,7 @@ export default function App() {
     others: false,
   });
   const sheetSyncReady = sheetSyncEnabled && sheetSpreadsheetId.trim().length > 0;
-  const [recentSheets, setRecentSheets] = useState(() => {
-    try {
-      const raw = localStorage.getItem('pipeline_sheet_recent');
-      const parsed = raw ? JSON.parse(raw) : [];
-      return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : [];
-    } catch {
-      return [];
-    }
-  });
+  const [recentSheets, setRecentSheets] = useState([]);
 
   useEffect(() => {
     try {
@@ -942,23 +934,6 @@ export default function App() {
       /* ignore */
     }
   }, [sheetAppendMode, sheetAutoClear, sheetSpreadsheetId, sheetSyncEnabled, sheetTabPrefix]);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('pipeline_sheet_recent', JSON.stringify(recentSheets));
-    } catch {
-      /* ignore */
-    }
-  }, [recentSheets]);
-
-  const rememberRecentSheet = useCallback((nextId) => {
-    const trimmed = safeToString(nextId).trim();
-    if (!trimmed) return;
-    setRecentSheets((prev) => {
-      const next = [trimmed, ...prev.filter((id) => id !== trimmed)];
-      return next.slice(0, 5);
-    });
-  }, []);
 
   /**
    * ============================================================
@@ -1016,6 +991,28 @@ export default function App() {
     return { ok: res.ok, status: res.status, data: payload };
   }, []);
 
+  const refreshRecentSheets = useCallback(async () => {
+    const res = await sheetsRequest({
+      path: '/sheets/recent?limit=8',
+      method: 'GET',
+    });
+    if (!res.ok) {
+      setRecentSheets([]);
+      return;
+    }
+    const files = Array.isArray(res.data?.files) ? res.data.files : [];
+    setRecentSheets(
+      files
+        .filter((file) => typeof file?.id === 'string' && file.id.length > 0)
+        .map((file) => ({
+          id: file.id,
+          name: typeof file?.name === 'string' ? file.name : '',
+          modifiedTime: file?.modifiedTime || null,
+          webViewLink: file?.webViewLink || null,
+        }))
+    );
+  }, [sheetsRequest]);
+
   const refreshSheetStatus = useCallback(async () => {
     const res = await sheetsRequest({ path: '/sheets/status', method: 'GET' });
     if (res.ok) {
@@ -1029,6 +1026,14 @@ export default function App() {
   useEffect(() => {
     refreshSheetStatus();
   }, [refreshSheetStatus]);
+
+  useEffect(() => {
+    if (!sheetSyncEnabled) {
+      setRecentSheets([]);
+      return;
+    }
+    refreshRecentSheets();
+  }, [refreshRecentSheets, sheetSyncEnabled]);
 
   /**
    * ============================================================
@@ -2929,7 +2934,6 @@ export default function App() {
                 sheetSpreadsheetId={sheetSpreadsheetId}
                 setSheetSpreadsheetId={setSheetSpreadsheetId}
                 recentSheets={recentSheets}
-                rememberRecentSheet={rememberRecentSheet}
                 sheetStatus={sheetStatus}
                 isRunning={isRunning}
                 runPipeline={runPipeline}

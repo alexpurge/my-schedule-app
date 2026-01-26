@@ -140,7 +140,7 @@ app.use((req, res, next) => {
   next();
 });
 
-const getSheetsAuth = () => {
+const getGoogleAuth = (scopes) => {
   const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   let privateKey = process.env.GOOGLE_PRIVATE_KEY;
   if (!clientEmail || !privateKey) return null;
@@ -150,9 +150,12 @@ const getSheetsAuth = () => {
   return new JWT({
     email: clientEmail,
     key: privateKey,
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+    scopes,
   });
 };
+
+const getSheetsAuth = () => getGoogleAuth(["https://www.googleapis.com/auth/spreadsheets"]);
+const getDriveAuth = () => getGoogleAuth(["https://www.googleapis.com/auth/drive.readonly"]);
 
 const buildSheetsUrl = (spreadsheetId, path, query) => {
   const url = new URL(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}${path}`);
@@ -179,6 +182,41 @@ const requestSheetsApi = async ({ spreadsheetId, path, method = "GET", query, bo
       "Content-Type": "application/json",
     },
     body: body ? JSON.stringify(body) : undefined,
+  });
+  const contentType = res.headers.get("content-type") || "";
+  let payload = null;
+  if (contentType.includes("application/json")) {
+    payload = await res.json().catch(() => null);
+  } else {
+    payload = await res.text().catch(() => null);
+  }
+  return { ok: res.ok, status: res.status, data: payload };
+};
+
+const buildDriveUrl = (path, query) => {
+  const url = new URL(`https://www.googleapis.com/drive/v3${path}`);
+  if (query && typeof query === "object") {
+    Object.entries(query).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === "") return;
+      url.searchParams.set(key, String(value));
+    });
+  }
+  return url;
+};
+
+const requestDriveApi = async ({ path, method = "GET", query }) => {
+  const auth = getDriveAuth();
+  if (!auth) {
+    return { ok: false, status: 500, data: { error: "Drive API is not configured on the server." } };
+  }
+  const headers = await auth.getRequestHeaders();
+  const url = buildDriveUrl(path, query);
+  const res = await fetch(url, {
+    method,
+    headers: {
+      ...headers,
+      "Content-Type": "application/json",
+    },
   });
   const contentType = res.headers.get("content-type") || "";
   let payload = null;
@@ -220,6 +258,42 @@ app.get("/sheets/status", (req, res) => {
     configured: Boolean(clientEmail && privateKey),
     serviceAccountEmail: clientEmail || null,
   });
+});
+
+app.get("/sheets/recent", async (req, res) => {
+  const rawLimit = Number(req.query.limit || 10);
+  const limit = Number.isFinite(rawLimit) ? Math.min(25, Math.max(1, rawLimit)) : 10;
+  try {
+    const recentRes = await requestDriveApi({
+      path: "/files",
+      query: {
+        q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
+        orderBy: "modifiedTime desc",
+        pageSize: limit,
+        fields: "files(id,name,modifiedTime,webViewLink)",
+      },
+    });
+
+    if (!recentRes.ok) {
+      res
+        .status(recentRes.status)
+        .json(recentRes.data || { error: "Unable to load recent spreadsheets." });
+      return;
+    }
+
+    const files = Array.isArray(recentRes.data?.files) ? recentRes.data.files : [];
+    res.json({
+      files: files.map((file) => ({
+        id: file?.id || "",
+        name: file?.name || "",
+        modifiedTime: file?.modifiedTime || null,
+        webViewLink: file?.webViewLink || null,
+      })),
+    });
+  } catch (error) {
+    console.error("Recent sheets fetch failed:", error);
+    res.status(500).json({ error: "Recent sheets fetch failed." });
+  }
 });
 
 app.post("/sheets/sync", async (req, res) => {
