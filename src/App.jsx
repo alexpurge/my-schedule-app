@@ -2410,6 +2410,11 @@ export default function App() {
   }, [watchdogJobs]);
 
   const showWelcomeOverlay = welcomePhase !== 'idle' && welcomePhase !== 'done';
+  const showAppContent =
+    welcomePhase === 'typing' ||
+    welcomePhase === 'hold' ||
+    welcomePhase === 'fade-out' ||
+    welcomePhase === 'done';
   const welcomeOverlayClassName = [
     'welcomeOverlay',
     welcomePhase === 'fade-in' ? 'fade-in' : '',
@@ -2455,6 +2460,28 @@ export default function App() {
             <div className="authGoogleButton" ref={googleButtonRef} />
           </div>
         </div>
+      </div>
+    );
+  }
+
+  if (!showAppContent) {
+    return (
+      <div className="pipelineShell authShell" data-theme={theme}>
+        <GlobalStyles />
+        <div className="authSplineFrame" aria-hidden="true">
+          <iframe
+            title="Reactive Orb background"
+            src="https://my.spline.design/reactiveorb-3gF6RAL6Ew7QKrNvj2iYlMvu/"
+            loading="eager"
+            referrerPolicy="no-referrer"
+            allow="autoplay; fullscreen"
+          />
+        </div>
+        {showWelcomeOverlay && (
+          <div className={welcomeOverlayClassName} aria-live="polite" aria-label="Welcome message">
+            <div className="welcomeOverlayText">{welcomeText}</div>
+          </div>
+        )}
       </div>
     );
   }
