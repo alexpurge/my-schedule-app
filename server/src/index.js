@@ -5,7 +5,7 @@ import path from "path";
 import { fileURLToPath } from "url";
 import cookieParser from "cookie-parser";
 import crypto from "crypto";
-import { OAuth2Client } from "google-auth-library";
+import { OAuth2Client, JWT } from "google-auth-library";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -138,6 +138,198 @@ app.use((req, res, next) => {
   }
   req.user = session;
   next();
+});
+
+const getSheetsAuth = () => {
+  const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  let privateKey = process.env.GOOGLE_PRIVATE_KEY;
+  if (!clientEmail || !privateKey) return null;
+  if (privateKey.includes("\\n")) {
+    privateKey = privateKey.replace(/\\n/g, "\n");
+  }
+  return new JWT({
+    email: clientEmail,
+    key: privateKey,
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
+  });
+};
+
+const buildSheetsUrl = (spreadsheetId, path, query) => {
+  const url = new URL(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}${path}`);
+  if (query && typeof query === "object") {
+    Object.entries(query).forEach(([key, value]) => {
+      if (value === undefined || value === null || value === "") return;
+      url.searchParams.set(key, String(value));
+    });
+  }
+  return url;
+};
+
+const requestSheetsApi = async ({ spreadsheetId, path, method = "GET", query, body }) => {
+  const auth = getSheetsAuth();
+  if (!auth) {
+    return { ok: false, status: 500, data: { error: "Sheets API is not configured on the server." } };
+  }
+  const headers = await auth.getRequestHeaders();
+  const url = buildSheetsUrl(spreadsheetId, path, query);
+  const res = await fetch(url, {
+    method,
+    headers: {
+      ...headers,
+      "Content-Type": "application/json",
+    },
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const contentType = res.headers.get("content-type") || "";
+  let payload = null;
+  if (contentType.includes("application/json")) {
+    payload = await res.json().catch(() => null);
+  } else {
+    payload = await res.text().catch(() => null);
+  }
+  return { ok: res.ok, status: res.status, data: payload };
+};
+
+const ensureSheetExists = async (spreadsheetId, sheetTitle) => {
+  const meta = await requestSheetsApi({
+    spreadsheetId,
+    path: "",
+    query: { fields: "sheets.properties" },
+  });
+  if (!meta.ok) return meta;
+  const sheets = meta.data?.sheets || [];
+  const exists = sheets.find((sheet) => sheet?.properties?.title === sheetTitle);
+  if (exists) return meta;
+  return requestSheetsApi({
+    spreadsheetId,
+    path: ":batchUpdate",
+    method: "POST",
+    body: {
+      requests: [{ addSheet: { properties: { title: sheetTitle } } }],
+    },
+  });
+};
+
+const normalizeRows = (headers, rows) =>
+  rows.map((row) => headers.map((header) => (row && row[header] !== undefined ? row[header] : "")));
+
+app.get("/sheets/status", (req, res) => {
+  const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const privateKey = process.env.GOOGLE_PRIVATE_KEY;
+  res.json({
+    configured: Boolean(clientEmail && privateKey),
+    serviceAccountEmail: clientEmail || null,
+  });
+});
+
+app.post("/sheets/sync", async (req, res) => {
+  const { spreadsheetId, sheetTitle, headers, rows, mode } = req.body || {};
+  if (!spreadsheetId || !sheetTitle || !Array.isArray(headers) || !Array.isArray(rows)) {
+    res.status(400).json({ error: "Missing spreadsheetId, sheetTitle, headers, or rows." });
+    return;
+  }
+
+  try {
+    const ensureRes = await ensureSheetExists(spreadsheetId, sheetTitle);
+    if (!ensureRes.ok) {
+      res.status(ensureRes.status).json(ensureRes.data || { error: "Unable to access spreadsheet." });
+      return;
+    }
+
+    const values = normalizeRows(headers, rows);
+    const range = encodeURIComponent(`${sheetTitle}!A1`);
+
+    if (mode === "overwrite") {
+      await requestSheetsApi({
+        spreadsheetId,
+        path: `/values/${range}:clear`,
+        method: "POST",
+      });
+
+      const payloadValues = [headers, ...values];
+      const updateRes = await requestSheetsApi({
+        spreadsheetId,
+        path: `/values/${range}`,
+        method: "PUT",
+        query: { valueInputOption: "RAW" },
+        body: { values: payloadValues },
+      });
+      res.status(updateRes.ok ? 200 : updateRes.status).json({
+        ok: updateRes.ok,
+        rows: values.length,
+      });
+      return;
+    }
+
+    const headerCheck = await requestSheetsApi({
+      spreadsheetId,
+      path: `/values/${range}`,
+      query: { majorDimension: "ROWS" },
+    });
+    const hasHeader = Array.isArray(headerCheck.data?.values) && headerCheck.data.values.length > 0;
+    const payloadValues = hasHeader ? values : [headers, ...values];
+
+    if (!payloadValues.length) {
+      res.json({ ok: true, rows: 0 });
+      return;
+    }
+
+    const appendRes = await requestSheetsApi({
+      spreadsheetId,
+      path: `/values/${range}:append`,
+      method: "POST",
+      query: { valueInputOption: "RAW", insertDataOption: "INSERT_ROWS" },
+      body: { values: payloadValues },
+    });
+
+    res.status(appendRes.ok ? 200 : appendRes.status).json({
+      ok: appendRes.ok,
+      rows: values.length,
+    });
+  } catch (error) {
+    console.error("Sheets sync failed:", error);
+    res.status(500).json({ error: "Sheets sync failed." });
+  }
+});
+
+app.post("/sheets/read", async (req, res) => {
+  const { spreadsheetId, sheetTitle } = req.body || {};
+  if (!spreadsheetId || !sheetTitle) {
+    res.status(400).json({ error: "Missing spreadsheetId or sheetTitle." });
+    return;
+  }
+
+  try {
+    const range = encodeURIComponent(sheetTitle);
+    const readRes = await requestSheetsApi({
+      spreadsheetId,
+      path: `/values/${range}`,
+      query: { majorDimension: "ROWS" },
+    });
+
+    if (!readRes.ok) {
+      res.status(readRes.status).json(readRes.data || { error: "Unable to read sheet data." });
+      return;
+    }
+
+    const values = Array.isArray(readRes.data?.values) ? readRes.data.values : [];
+    if (!values.length) {
+      res.json({ headers: [], rows: [] });
+      return;
+    }
+    const [headers, ...dataRows] = values;
+    const rows = dataRows.map((row) => {
+      const obj = {};
+      headers.forEach((header, idx) => {
+        obj[header] = row?.[idx] ?? "";
+      });
+      return obj;
+    });
+    res.json({ headers, rows });
+  } catch (error) {
+    console.error("Sheets read failed:", error);
+    res.status(500).json({ error: "Sheets read failed." });
+  }
 });
 
 app.get("/apify/token", (req, res) => {

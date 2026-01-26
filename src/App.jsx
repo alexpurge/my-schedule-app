@@ -217,6 +217,16 @@ const RX_MOBILE = /(?:^|[^0-9])((?:\+?61|0)[\s\-]*4(?:[\s\-]*\d){8})(?![0-9])/g;
 const RX_LANDLINE_GEO = /(?:^|[^0-9])((?:\+?61|0)[\s\-]*[2378](?:[\s\-]*\d){8})(?![0-9])/g;
 const RX_LANDLINE_BIZ = /(?:^|[^0-9])((?:1300|1800)(?:[\s\-]*\d){6}|(?:13)(?:[\s\-]*\d){4})(?![0-9])/g;
 
+const SHEET_STAGE_LABELS = {
+  watchdog: 'Bulk Initial Pull',
+  deduplicated: 'Deduplicated',
+  purified: 'Purified',
+  master_filter: 'Category Filter',
+  mobiles: 'Mobiles',
+  landlines: 'Landlines',
+  others: 'Others',
+};
+
 /**
  * ============================================================
  *  HELPERS
@@ -862,6 +872,70 @@ export default function App() {
 
   /**
    * ============================================================
+   *  GOOGLE SHEETS SYNC (NEW)
+   * ============================================================
+   */
+  const [sheetSyncEnabled, setSheetSyncEnabled] = useState(() => {
+    try {
+      return localStorage.getItem('pipeline_sheet_enabled') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [sheetSpreadsheetId, setSheetSpreadsheetId] = useState(() => {
+    try {
+      return localStorage.getItem('pipeline_sheet_spreadsheet_id') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [sheetTabPrefix, setSheetTabPrefix] = useState(() => {
+    try {
+      return localStorage.getItem('pipeline_sheet_prefix') || '';
+    } catch {
+      return '';
+    }
+  });
+  const [sheetAppendMode, setSheetAppendMode] = useState(() => {
+    try {
+      return localStorage.getItem('pipeline_sheet_mode') || 'append';
+    } catch {
+      return 'append';
+    }
+  });
+  const [sheetAutoClear, setSheetAutoClear] = useState(() => {
+    try {
+      return localStorage.getItem('pipeline_sheet_auto_clear') !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  const [sheetStatus, setSheetStatus] = useState({ configured: false, serviceAccountEmail: null });
+  const [sheetStageAvailability, setSheetStageAvailability] = useState({
+    watchdog: false,
+    deduplicated: false,
+    purified: false,
+    master_filter: false,
+    mobiles: false,
+    landlines: false,
+    others: false,
+  });
+  const sheetSyncReady = sheetSyncEnabled && sheetSpreadsheetId.trim().length > 0;
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('pipeline_sheet_enabled', String(sheetSyncEnabled));
+      localStorage.setItem('pipeline_sheet_spreadsheet_id', sheetSpreadsheetId);
+      localStorage.setItem('pipeline_sheet_prefix', sheetTabPrefix);
+      localStorage.setItem('pipeline_sheet_mode', sheetAppendMode);
+      localStorage.setItem('pipeline_sheet_auto_clear', String(sheetAutoClear));
+    } catch {
+      /* ignore */
+    }
+  }, [sheetAppendMode, sheetAutoClear, sheetSpreadsheetId, sheetSyncEnabled, sheetTabPrefix]);
+
+  /**
+   * ============================================================
    *  APIFY (SERVER-SUPPLIED)
    * ============================================================
    */
@@ -893,6 +967,42 @@ export default function App() {
     }
     return { ok: res.ok, status: res.status, data: payload };
   }, []);
+
+  const sheetsRequest = useCallback(async ({ path, method = 'POST', body }) => {
+    const res = await fetch(path, {
+      method,
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+
+    const contentType = res.headers.get('content-type') || '';
+    let payload = null;
+    if (contentType.includes('application/json')) {
+      try {
+        payload = await res.json();
+      } catch {
+        payload = null;
+      }
+    } else {
+      payload = await res.text();
+    }
+    return { ok: res.ok, status: res.status, data: payload };
+  }, []);
+
+  const refreshSheetStatus = useCallback(async () => {
+    const res = await sheetsRequest({ path: '/sheets/status', method: 'GET' });
+    if (res.ok) {
+      setSheetStatus({
+        configured: Boolean(res.data?.configured),
+        serviceAccountEmail: res.data?.serviceAccountEmail || null,
+      });
+    }
+  }, [sheetsRequest]);
+
+  useEffect(() => {
+    refreshSheetStatus();
+  }, [refreshSheetStatus]);
 
   /**
    * ============================================================
@@ -975,6 +1085,72 @@ export default function App() {
     const timestamp = new Date().toLocaleTimeString();
     setLogs((prev) => [...prev, { message, type, timestamp }]);
   }, []);
+
+  const buildSheetTitle = useCallback(
+    (stageKeyOrLabel) => {
+      const label = SHEET_STAGE_LABELS[stageKeyOrLabel] || stageKeyOrLabel;
+      const prefix = sheetTabPrefix.trim();
+      return sanitizeSheetName(prefix ? `${prefix} - ${label}` : label);
+    },
+    [sheetTabPrefix]
+  );
+
+  const syncStageToSheets = useCallback(
+    async ({ stageKey, headers: stageHeaders, rows: stageRows }) => {
+      if (!sheetSyncReady) return false;
+      if (!Array.isArray(stageHeaders) || !Array.isArray(stageRows)) return false;
+      if (!stageHeaders.length) return false;
+
+      const sheetTitle = buildSheetTitle(stageKey);
+      const res = await sheetsRequest({
+        path: '/sheets/sync',
+        body: {
+          spreadsheetId: sheetSpreadsheetId.trim(),
+          sheetTitle,
+          headers: stageHeaders,
+          rows: stageRows,
+          mode: sheetAppendMode,
+        },
+      });
+
+      if (res.ok) {
+        setSheetStageAvailability((prev) => ({ ...prev, [stageKey]: true }));
+        addLog(`Google Sheets: synced ${stageRows.length} row(s) to "${sheetTitle}".`, 'success');
+        return true;
+      }
+
+      addLog(
+        `Google Sheets sync failed for "${sheetTitle}" (${res.status}).`,
+        'error'
+      );
+      return false;
+    },
+    [
+      addLog,
+      buildSheetTitle,
+      sheetAppendMode,
+      sheetSpreadsheetId,
+      sheetSyncReady,
+      sheetsRequest,
+    ]
+  );
+
+  const fetchStageFromSheets = useCallback(
+    async (stageKey) => {
+      if (!sheetSyncReady) return null;
+      const sheetTitle = buildSheetTitle(stageKey);
+      const res = await sheetsRequest({
+        path: '/sheets/read',
+        body: { spreadsheetId: sheetSpreadsheetId.trim(), sheetTitle },
+      });
+      if (!res.ok) {
+        addLog(`Google Sheets read failed for "${sheetTitle}" (${res.status}).`, 'error');
+        return null;
+      }
+      return { headers: res.data?.headers || [], rows: res.data?.rows || [] };
+    },
+    [addLog, buildSheetTitle, sheetSpreadsheetId, sheetSyncReady, sheetsRequest]
+  );
 
   /**
    * ============================================================
@@ -1077,6 +1253,16 @@ export default function App() {
     setWatchdogExporting(false);
     setWatchdogExportStatus('');
 
+    setSheetStageAvailability({
+      watchdog: false,
+      deduplicated: false,
+      purified: false,
+      master_filter: false,
+      mobiles: false,
+      landlines: false,
+      others: false,
+    });
+
     setStats({
       watchdogKeywords: 0,
       watchdogTotalJobs: 0,
@@ -1110,16 +1296,26 @@ export default function App() {
   }, [setWatchdogJobsSafe]);
 
   const downloadCsvSnapshot = useCallback(
-    (label, dataRows) => {
-      if (!headers.length || !dataRows.length) return;
-      const csv = buildCsvContent(headers, dataRows);
+    async (stageKey, dataRows) => {
+      let csvHeaders = headers;
+      let csvRows = dataRows;
+      if ((!csvHeaders.length || !csvRows.length) && sheetSyncReady) {
+        const remote = await fetchStageFromSheets(stageKey);
+        if (remote) {
+          csvHeaders = remote.headers;
+          csvRows = remote.rows;
+        }
+      }
+
+      if (!csvHeaders.length || !csvRows.length) return;
+      const csv = buildCsvContent(csvHeaders, csvRows);
       const date = new Date().toISOString().slice(0, 10);
-      const filename = `${sourceBaseName || 'pipeline'}_${label}_${date}.csv`;
+      const filename = `${sourceBaseName || 'pipeline'}_${stageKey}_${date}.csv`;
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       downloadBlob(blob, filename);
       addLog(`Downloaded: ${filename}`, 'success');
     },
-    [addLog, headers, sourceBaseName]
+    [addLog, fetchStageFromSheets, headers, sheetSyncReady, sourceBaseName]
   );
 
   /**
@@ -1650,7 +1846,7 @@ export default function App() {
 
     // Store exported "CSV" (internally) as pipeline input
     setHeaders(exportedHeaders);
-    setRows(allRows);
+    setRows(sheetSyncReady && sheetAutoClear ? [] : allRows);
     setSourceBaseName(`watchdog_export_${new Date().toISOString().slice(0, 10)}`);
 
     setStats((s) => ({
@@ -1660,6 +1856,12 @@ export default function App() {
     }));
 
     addLog(`Bulk initial pull export complete: ${allRows.length} row(s).`, 'success');
+
+    await syncStageToSheets({
+      stageKey: 'watchdog',
+      headers: exportedHeaders,
+      rows: allRows,
+    });
 
     return { exportedHeaders, allRows };
   }, [
@@ -1671,6 +1873,9 @@ export default function App() {
     dateViolationStreakLimit,
     memory,
     setWatchdogJobsSafe,
+    sheetAutoClear,
+    sheetSyncReady,
+    syncStageToSheets,
     updateWatchdogJob,
     watchdogActiveStatus,
     watchdogActorId,
@@ -1913,6 +2118,15 @@ export default function App() {
     setDedupRows([]);
     setPurifiedRows([]);
     setFilteredRows([]);
+    setSheetStageAvailability({
+      watchdog: false,
+      deduplicated: false,
+      purified: false,
+      master_filter: false,
+      mobiles: false,
+      landlines: false,
+      others: false,
+    });
 
     stopRef.current = false;
 
@@ -1926,15 +2140,21 @@ export default function App() {
       // -----------------------------
       // 0) WATCHDOG BULK RUN + INTERNAL EXPORT
       // -----------------------------
-      const { allRows } = await runWatchdogAndExportRows();
+      const { allRows, exportedHeaders } = await runWatchdogAndExportRows();
+      let workingRows = allRows;
+      let pipelineHeaders = exportedHeaders;
 
       if (stopRef.current) throw new Error('Stopped by user.');
 
       // Validate column settings exist (settings are preset; can be changed in Settings page)
       // (This is runtime validation only; does not modify settings.)
-      const hasDedup = allRows.length ? Object.prototype.hasOwnProperty.call(allRows[0], dedupColumn) : false;
-      const hasFilter = allRows.length ? Object.prototype.hasOwnProperty.call(allRows[0], filterColumn) : false;
-      const hasUrl = allRows.length ? Object.prototype.hasOwnProperty.call(allRows[0], urlColumn) : false;
+      const hasDedup = workingRows.length
+        ? Object.prototype.hasOwnProperty.call(workingRows[0], dedupColumn)
+        : false;
+      const hasFilter = workingRows.length
+        ? Object.prototype.hasOwnProperty.call(workingRows[0], filterColumn)
+        : false;
+      const hasUrl = workingRows.length ? Object.prototype.hasOwnProperty.call(workingRows[0], urlColumn) : false;
 
       if (!hasDedup) throw new Error(`Deduplicate column not found in bulk initial pull export: "${dedupColumn}"`);
       if (!hasFilter) throw new Error(`Category Filter column not found in bulk initial pull export: "${filterColumn}"`);
@@ -1948,7 +2168,7 @@ export default function App() {
       setProgress(35);
 
       const keywordColumn = 'keyword';
-      const keywordColumns = getKeywordColumns(allRows);
+      const keywordColumns = getKeywordColumns(workingRows);
       const keywordColumnsToUse = keywordColumns.length ? keywordColumns : [keywordColumn];
       const seen = new Set();
       const deduped = [];
@@ -1956,7 +2176,7 @@ export default function App() {
       let maxKeywords = 0;
       let dupRemoved = 0;
 
-      for (const row of allRows) {
+      for (const row of workingRows) {
         if (stopRef.current) throw new Error('Stopped by user.');
         const key = safeToString(row[dedupColumn]).trim();
         const rowKeywords = extractKeywordsFromRow(row, keywordColumnsToUse);
@@ -1986,15 +2206,14 @@ export default function App() {
       }
 
       if (maxKeywords > 1) {
-        setHeaders((prev) => {
-          const baseHeaders = prev.filter(
-            (header) => header !== keywordColumn && !header.startsWith(`${keywordColumn}_`)
-          );
-          const keywordHeaders = Array.from({ length: maxKeywords }, (_, idx) =>
-            idx === 0 ? keywordColumn : `${keywordColumn}_${idx + 1}`
-          );
-          return [...baseHeaders, ...keywordHeaders];
-        });
+        const baseHeaders = pipelineHeaders.filter(
+          (header) => header !== keywordColumn && !header.startsWith(`${keywordColumn}_`)
+        );
+        const keywordHeaders = Array.from({ length: maxKeywords }, (_, idx) =>
+          idx === 0 ? keywordColumn : `${keywordColumn}_${idx + 1}`
+        );
+        pipelineHeaders = [...baseHeaders, ...keywordHeaders];
+        setHeaders(pipelineHeaders);
       }
 
       setStats((s) => ({
@@ -2002,9 +2221,22 @@ export default function App() {
         dedupRemoved: dupRemoved,
         afterDedup: deduped.length,
       }));
-      setDedupRows(deduped);
+      setDedupRows(sheetSyncReady && sheetAutoClear ? [] : deduped);
+
+      await syncStageToSheets({
+        stageKey: 'deduplicated',
+        headers: pipelineHeaders,
+        rows: deduped,
+      });
 
       addLog(`Deduplicator: removed ${dupRemoved} duplicates (by "${dedupColumn}").`, dupRemoved ? 'warning' : 'success');
+
+      if (sheetSyncReady && sheetAutoClear) {
+        workingRows.length = 0;
+        setRows([]);
+      }
+
+      workingRows = deduped;
 
       // -----------------------------
       // 2) PURIFY
@@ -2035,12 +2267,25 @@ export default function App() {
         purifierRemoved,
         afterPurify: purified.length,
       }));
-      setPurifiedRows(purified);
+      setPurifiedRows(sheetSyncReady && sheetAutoClear ? [] : purified);
+
+      await syncStageToSheets({
+        stageKey: 'purified',
+        headers: pipelineHeaders,
+        rows: purified,
+      });
 
       addLog(
         `Foreign Language Detector: removed ${purifierRemoved} row(s) containing foreign script.`,
         purifierRemoved ? 'warning' : 'success'
       );
+
+      if (sheetSyncReady && sheetAutoClear) {
+        deduped.length = 0;
+        setDedupRows([]);
+      }
+
+      workingRows = purified;
 
       // -----------------------------
       // 3) MASTER FILTER (HARD-CODED KEYWORDS)
@@ -2054,9 +2299,9 @@ export default function App() {
 
       if (matchMode === 'contains') {
         const keywords = Array.from(allowSet);
-        for (let i = 0; i < purified.length; i++) {
+        for (let i = 0; i < workingRows.length; i++) {
           if (stopRef.current) throw new Error('Stopped by user.');
-          const rowObj = purified[i];
+          const rowObj = workingRows[i];
           const raw = safeToString(rowObj[filterColumn]).trim();
           const val = raw.toLowerCase();
 
@@ -2066,14 +2311,14 @@ export default function App() {
 
           if (i % chunk === 0) {
             await sleep(0);
-            const pct = 48 + (i / Math.max(1, purified.length)) * 7; // 48 -> 55
+            const pct = 48 + (i / Math.max(1, workingRows.length)) * 7; // 48 -> 55
             setProgress(Math.min(55, Math.max(48, pct)));
           }
         }
       } else {
-        for (let i = 0; i < purified.length; i++) {
+        for (let i = 0; i < workingRows.length; i++) {
           if (stopRef.current) throw new Error('Stopped by user.');
-          const rowObj = purified[i];
+          const rowObj = workingRows[i];
           const raw = safeToString(rowObj[filterColumn]).trim();
           const val = raw.toLowerCase();
 
@@ -2082,7 +2327,7 @@ export default function App() {
 
           if (i % chunk === 0) {
             await sleep(0);
-            const pct = 48 + (i / Math.max(1, purified.length)) * 7; // 48 -> 55
+            const pct = 48 + (i / Math.max(1, workingRows.length)) * 7; // 48 -> 55
             setProgress(Math.min(55, Math.max(48, pct)));
           }
         }
@@ -2093,12 +2338,25 @@ export default function App() {
         masterFilterRemoved,
         afterMasterFilter: kept.length,
       }));
-      setFilteredRows(kept);
+      setFilteredRows(sheetSyncReady && sheetAutoClear ? [] : kept);
+
+      await syncStageToSheets({
+        stageKey: 'master_filter',
+        headers: pipelineHeaders,
+        rows: kept,
+      });
 
       addLog(
         `Category Filter: kept ${kept.length}, removed ${masterFilterRemoved} (column "${filterColumn}", mode "${matchMode}").`,
         kept.length ? 'success' : 'warning'
       );
+
+      if (sheetSyncReady && sheetAutoClear) {
+        purified.length = 0;
+        setPurifiedRows([]);
+      }
+
+      workingRows = kept;
 
       if (kept.length === 0) {
         throw new Error('Category Filter produced 0 rows. Nothing to send to Apify.');
@@ -2117,6 +2375,11 @@ export default function App() {
       setStats((s) => ({ ...s, urlsForApify: allUrls.length }));
 
       if (!allUrls.length) throw new Error(`No URLs detected in column "${urlColumn}".`);
+
+      if (sheetSyncReady && sheetAutoClear) {
+        workingRows.length = 0;
+        setFilteredRows([]);
+      }
 
       addLog(`Apify: extracted ${allUrls.length} URL(s) from "${urlColumn}".`, 'info');
 
@@ -2329,7 +2592,7 @@ export default function App() {
       setStatus('Complete. Ready to download final spreadsheet.');
       setProgress(100);
 
-      setFinalWorkbook({
+      const finalWorkbookPayload = {
         headers: allKeys,
         fileBaseName: sourceBaseName || 'pipeline',
         sheets: [
@@ -2337,7 +2600,21 @@ export default function App() {
           { name: 'Landlines', rows: landlineList },
           { name: 'Others', rows: otherList },
         ],
-      });
+      };
+
+      await Promise.all([
+        syncStageToSheets({ stageKey: 'mobiles', headers: allKeys, rows: mobileList }),
+        syncStageToSheets({ stageKey: 'landlines', headers: allKeys, rows: landlineList }),
+        syncStageToSheets({ stageKey: 'others', headers: allKeys, rows: otherList }),
+      ]);
+
+      setFinalWorkbook(sheetSyncReady && sheetAutoClear ? null : finalWorkbookPayload);
+
+      if (sheetSyncReady && sheetAutoClear) {
+        mobileList.length = 0;
+        landlineList.length = 0;
+        otherList.length = 0;
+      }
 
       addLog('--- PIPELINE COMPLETE ---', 'success');
     } catch (err) {
@@ -2359,16 +2636,22 @@ export default function App() {
     dedupColumn,
     extractUrls,
     filterColumn,
+    headers,
     getKeywordColumns,
     matchMode,
     resolveItemUrl,
     runSingleBatch,
     runWatchdogAndExportRows,
+    setSheetStageAvailability,
+    sheetAutoClear,
+    sheetSyncReady,
     sourceBaseName,
+    syncStageToSheets,
     urlColumn,
     setDedupRows,
     setFilteredRows,
     setPurifiedRows,
+    setRows,
     watchdogMaxConcurrency,
   ]);
 
@@ -2377,12 +2660,44 @@ export default function App() {
    *  DOWNLOAD FINAL
    * ============================================================
    */
-  const downloadFinalSpreadsheet = useCallback(() => {
-    if (!finalWorkbook) return;
+  const downloadFinalSpreadsheet = useCallback(async () => {
+    let workbook = finalWorkbook;
 
-    const xlsxData = buildXlsxFile(finalWorkbook);
+    if (!workbook && sheetSyncReady) {
+      const [mobiles, landlines, others] = await Promise.all([
+        fetchStageFromSheets('mobiles'),
+        fetchStageFromSheets('landlines'),
+        fetchStageFromSheets('others'),
+      ]);
+
+      const headerSet = new Set();
+      const mergedHeaders = [];
+      [mobiles, landlines, others].forEach((data) => {
+        (data?.headers || []).forEach((header) => {
+          if (!headerSet.has(header)) {
+            headerSet.add(header);
+            mergedHeaders.push(header);
+          }
+        });
+      });
+
+      const finalHeaders = mergedHeaders.length ? mergedHeaders : headers;
+      workbook = {
+        headers: finalHeaders,
+        fileBaseName: sourceBaseName || 'pipeline',
+        sheets: [
+          { name: 'Mobiles', rows: mobiles?.rows || [] },
+          { name: 'Landlines', rows: landlines?.rows || [] },
+          { name: 'Others', rows: others?.rows || [] },
+        ],
+      };
+    }
+
+    if (!workbook) return;
+
+    const xlsxData = buildXlsxFile(workbook);
     const date = new Date().toISOString().slice(0, 10);
-    const filename = `${finalWorkbook.fileBaseName || 'pipeline'}_Sorted_${date}.xlsx`;
+    const filename = `${workbook.fileBaseName || 'pipeline'}_Sorted_${date}.xlsx`;
 
     const blob = new Blob([xlsxData], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -2390,7 +2705,7 @@ export default function App() {
     downloadBlob(blob, filename);
 
     addLog(`Downloaded: ${filename}`, 'success');
-  }, [addLog, finalWorkbook]);
+  }, [addLog, fetchStageFromSheets, finalWorkbook, headers, sheetSyncReady, sourceBaseName]);
 
   /**
    * ============================================================
@@ -2419,6 +2734,11 @@ export default function App() {
   ]
     .filter(Boolean)
     .join(' ');
+
+  const finalWorkbookAvailable =
+    Boolean(finalWorkbook) ||
+    (sheetSyncReady &&
+      (sheetStageAvailability.mobiles || sheetStageAvailability.landlines || sheetStageAvailability.others));
 
   if (!authState.authenticated) {
     return (
@@ -2500,7 +2820,7 @@ export default function App() {
           stopPipeline={stopPipeline}
           resetAll={resetAll}
           downloadFinalSpreadsheet={downloadFinalSpreadsheet}
-          finalWorkbook={finalWorkbook}
+          finalWorkbookAvailable={finalWorkbookAvailable}
         />
 
         {/* Progress */}
@@ -2533,6 +2853,18 @@ export default function App() {
                 presetFilterColumn={PRESET_FILTER_COLUMN}
                 presetUrlColumn={PRESET_URL_COLUMN}
                 presetMatchMode={PRESET_MATCH_MODE}
+                sheetSyncEnabled={sheetSyncEnabled}
+                setSheetSyncEnabled={setSheetSyncEnabled}
+                sheetSpreadsheetId={sheetSpreadsheetId}
+                setSheetSpreadsheetId={setSheetSpreadsheetId}
+                sheetTabPrefix={sheetTabPrefix}
+                setSheetTabPrefix={setSheetTabPrefix}
+                sheetAppendMode={sheetAppendMode}
+                setSheetAppendMode={setSheetAppendMode}
+                sheetAutoClear={sheetAutoClear}
+                setSheetAutoClear={setSheetAutoClear}
+                sheetStatus={sheetStatus}
+                refreshSheetStatus={refreshSheetStatus}
               />
             )}
 
@@ -2576,7 +2908,8 @@ export default function App() {
                 filteredRows={filteredRows}
                 dedupColumn={dedupColumn}
                 filterColumn={filterColumn}
-                finalWorkbook={finalWorkbook}
+                finalWorkbookAvailable={finalWorkbookAvailable}
+                sheetStageAvailability={sheetStageAvailability}
                 downloadFinalSpreadsheet={downloadFinalSpreadsheet}
                 error={error}
                 stage={stage}

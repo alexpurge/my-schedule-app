@@ -50,6 +50,18 @@ const SettingsPanel = ({
   presetFilterColumn,
   presetUrlColumn,
   presetMatchMode,
+  sheetSyncEnabled,
+  setSheetSyncEnabled,
+  sheetSpreadsheetId,
+  setSheetSpreadsheetId,
+  sheetTabPrefix,
+  setSheetTabPrefix,
+  sheetAppendMode,
+  setSheetAppendMode,
+  sheetAutoClear,
+  setSheetAutoClear,
+  sheetStatus,
+  refreshSheetStatus,
 }) => (
   <div className="grid">
     <div className="leftCol" style={{ gridColumn: 'span 12' }}>
@@ -126,6 +138,108 @@ const SettingsPanel = ({
             <RefreshCw size={16} />
             Reset to Presets
           </button>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="cardHeader">
+          <div className="cardHeaderTitle">
+            <Settings size={16} style={{ color: 'var(--color-primary)' }} />
+            Google Sheets Sync
+          </div>
+          <div className="cardHeaderTitle" style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
+            Store pipeline stages in a selected spreadsheet
+          </div>
+        </div>
+        <div className="cardBody">
+          <div className="toggleRow" style={{ marginTop: 0 }}>
+            <div className="toggleMeta">
+              <div className="toggleLabel">Enable Sheets Sync</div>
+              <div className="toggleHint">{sheetSyncEnabled ? 'On' : 'Off'}</div>
+            </div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={sheetSyncEnabled}
+                onChange={(e) => setSheetSyncEnabled(e.target.checked)}
+              />
+              <span className="switchSlider" />
+            </label>
+          </div>
+
+          <div style={{ marginTop: 14 }}>
+            <label className="label">Spreadsheet ID</label>
+            <input
+              className="input"
+              value={sheetSpreadsheetId}
+              onChange={(e) => setSheetSpreadsheetId(e.target.value)}
+              placeholder="Paste the Google Sheet ID"
+              disabled={!sheetSyncEnabled || isRunning}
+            />
+          </div>
+
+          <div style={{ marginTop: 14 }}>
+            <label className="label">Sheet tab prefix (optional)</label>
+            <input
+              className="input"
+              value={sheetTabPrefix}
+              onChange={(e) => setSheetTabPrefix(e.target.value)}
+              placeholder="e.g. Run 2024-05-10"
+              disabled={!sheetSyncEnabled || isRunning}
+            />
+          </div>
+
+          <div style={{ marginTop: 14 }}>
+            <label className="label">Write mode</label>
+            <select
+              className="select"
+              value={sheetAppendMode}
+              onChange={(e) => setSheetAppendMode(e.target.value)}
+              disabled={!sheetSyncEnabled || isRunning}
+            >
+              <option value="append">Append rows</option>
+              <option value="overwrite">Overwrite sheet</option>
+            </select>
+          </div>
+
+          <div className="toggleRow" style={{ marginTop: 14 }}>
+            <div className="toggleMeta">
+              <div className="toggleLabel">Reduce local memory usage</div>
+              <div className="toggleHint">
+                {sheetAutoClear ? 'Clear local stage data after sync' : 'Keep local stage data'}
+              </div>
+            </div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={sheetAutoClear}
+                onChange={(e) => setSheetAutoClear(e.target.checked)}
+                disabled={!sheetSyncEnabled || isRunning}
+              />
+              <span className="switchSlider" />
+            </label>
+          </div>
+
+          <div className="smallNote" style={{ marginTop: 14 }}>
+            <b>Status:</b>{' '}
+            {sheetStatus?.configured
+              ? `Server connected (${sheetStatus.serviceAccountEmail || 'service account'})`
+              : 'Server not configured for Sheets yet'}
+          </div>
+
+          <button
+            className="btn"
+            type="button"
+            onClick={refreshSheetStatus}
+            disabled={isRunning}
+            style={{ marginTop: 12 }}
+          >
+            Refresh Sheets Status
+          </button>
+
+          <div className="smallNote" style={{ marginTop: 12 }}>
+            <b>Reminder:</b> Share the spreadsheet with the service account email above so it can write to new tabs.
+          </div>
         </div>
       </div>
 
