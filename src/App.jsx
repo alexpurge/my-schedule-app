@@ -795,6 +795,9 @@ input:-webkit-autofill:active{
   font-size: 12px;
   color: var(--text-main);
 }
+.noticeTitleLarge{
+  font-size: 16px;
+}
 .noticeDesc{
   margin-top: 4px;
   font-size: 11px;
@@ -1519,7 +1522,7 @@ export default function App() {
    * ============================================================
    */
   const [apiToken, setApiToken] = useState('');
-  const [memory, setMemory] = useState(4096);
+  const [memory, setMemory] = useState(128);
   const [customProxy, setCustomProxy] = useState('');
 
   /**
@@ -1529,15 +1532,19 @@ export default function App() {
    * ============================================================
    */
   const [watchdogActorId, setWatchdogActorId] = useState(WATCHDOG_DEFAULT_ACTOR_ID);
-  const [watchdogProxyType, setWatchdogProxyType] = useState('apify'); // apify | custom
+  const [watchdogProxyType, setWatchdogProxyType] = useState('custom'); // apify | custom
   const [watchdogKeywordsInput, setWatchdogKeywordsInput] = useState('');
-  const [watchdogCountry, setWatchdogCountry] = useState('ALL');
+  const [watchdogCountry, setWatchdogCountry] = useState('AU');
   const [watchdogActiveStatus, setWatchdogActiveStatus] = useState('active');
   const [watchdogMinDate, setWatchdogMinDate] = useState('');
-  const [watchdogMaxDate, setWatchdogMaxDate] = useState('');
+  const [watchdogMaxDate, setWatchdogMaxDate] = useState(() => {
+    const now = new Date();
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 10);
+  });
   const [watchdogMaxItems, setWatchdogMaxItems] = useState(100);
   const [watchdogMaxRuntime, setWatchdogMaxRuntime] = useState('');
-  const [watchdogMaxConcurrency, setWatchdogMaxConcurrency] = useState(5);
+  const [watchdogMaxConcurrency, setWatchdogMaxConcurrency] = useState(100);
   const [dateViolationEnabled, setDateViolationEnabled] = useState(true);
   const [dateViolationStreakLimit, setDateViolationStreakLimit] = useState(DEFAULT_DATE_VIOLATION_STREAK_LIMIT);
 
@@ -3362,7 +3369,7 @@ export default function App() {
                         Apify Sign-In
                       </div>
                       <div className="cardHeaderTitle" style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
-                        One token • Full run • No interruptions
+                        One token • Full run
                       </div>
                     </div>
 
@@ -3667,8 +3674,8 @@ export default function App() {
                         <div className="notice ok" style={{ marginTop: 14 }}>
                           <CheckCircle size={18} style={{ color: '#10b981' }} />
                           <div>
-                            <div className="noticeTitle">COMPLETE</div>
-                            <div className="noticeDesc">Export is ready. No popups, no interruptions.</div>
+                            <div className="noticeTitle noticeTitleLarge">COMPLETE</div>
+                            <div className="noticeDesc">Export is ready.</div>
                           </div>
                         </div>
                       )}
