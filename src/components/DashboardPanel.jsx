@@ -39,15 +39,24 @@ const DashboardPanel = ({
   filteredRows,
   dedupColumn,
   filterColumn,
-  finalWorkbook,
+  finalWorkbookAvailable,
+  sheetStageAvailability,
   downloadFinalSpreadsheet,
   error,
   stage,
   watchdogUiStats,
   watchdogJobs,
   abortWatchdogJob,
-}) => (
-  <div className="grid">
+}) => {
+  const stageReady = {
+    watchdog: rows.length > 0 || sheetStageAvailability?.watchdog,
+    deduplicated: dedupRows.length > 0 || sheetStageAvailability?.deduplicated,
+    purified: purifiedRows.length > 0 || sheetStageAvailability?.purified,
+    master_filter: filteredRows.length > 0 || sheetStageAvailability?.master_filter,
+  };
+
+  return (
+    <div className="grid">
     {/* LEFT COLUMN */}
     <div className="leftCol">
       {/* Watchdog Config (NEW) */}
@@ -327,7 +336,7 @@ const DashboardPanel = ({
                 type="button"
                 style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
                 onClick={() => downloadCsvSnapshot('watchdog', rows)}
-                disabled={!rows.length}
+                disabled={!stageReady.watchdog}
                 title="Download bulk initial pull export CSV"
               >
                 <Download size={14} />
@@ -348,7 +357,7 @@ const DashboardPanel = ({
                 type="button"
                 style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
                 onClick={() => downloadCsvSnapshot('deduplicated', dedupRows)}
-                disabled={!dedupRows.length}
+                disabled={!stageReady.deduplicated}
                 title="Download deduplicated CSV"
               >
                 <Download size={14} />
@@ -369,7 +378,7 @@ const DashboardPanel = ({
                 type="button"
                 style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
                 onClick={() => downloadCsvSnapshot('purified', purifiedRows)}
-                disabled={!purifiedRows.length}
+                disabled={!stageReady.purified}
                 title="Download purified CSV"
               >
                 <Download size={14} />
@@ -390,7 +399,7 @@ const DashboardPanel = ({
                 type="button"
                 style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
                 onClick={() => downloadCsvSnapshot('master_filter', filteredRows)}
-                disabled={!filteredRows.length}
+                disabled={!stageReady.master_filter}
                 title="Download category filter CSV"
               >
                 <Download size={14} />
@@ -447,12 +456,12 @@ const DashboardPanel = ({
           <button
             className="btn"
             onClick={downloadFinalSpreadsheet}
-            disabled={!finalWorkbook}
+            disabled={!finalWorkbookAvailable}
             type="button"
             style={{ width: '100%', marginTop: 14, justifyContent: 'center' }}
             title="Download final spreadsheet"
           >
-            {finalWorkbook ? (
+            {finalWorkbookAvailable ? (
               <>
                 <FileDown size={16} />
                 Download Final Spreadsheet (.xlsx)
@@ -600,7 +609,8 @@ const DashboardPanel = ({
         </div>
       </div>
     </div>
-  </div>
-);
+    </div>
+  );
+};
 
 export default DashboardPanel;

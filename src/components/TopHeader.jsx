@@ -2,7 +2,15 @@ import React from 'react';
 import { Download, RefreshCw, Square } from 'lucide-react';
 import StatusPill from './StatusPill';
 
-const TopHeader = ({ activeTab, stage, isRunning, stopPipeline, resetAll, downloadFinalSpreadsheet, finalWorkbook }) => (
+const TopHeader = ({
+  activeTab,
+  stage,
+  isRunning,
+  stopPipeline,
+  resetAll,
+  downloadFinalSpreadsheet,
+  finalWorkbookAvailable,
+}) => (
   <header className="topHeader">
     <div className="headerLeft">
       <div className="headerTitle">{activeTab === 'settings' ? 'Pipeline Settings' : 'Filtration System'}</div>
@@ -26,7 +34,7 @@ const TopHeader = ({ activeTab, stage, isRunning, stopPipeline, resetAll, downlo
       <button
         className="btn"
         onClick={downloadFinalSpreadsheet}
-        disabled={!finalWorkbook}
+        disabled={!finalWorkbookAvailable}
         type="button"
         title="Download final spreadsheet"
       >
