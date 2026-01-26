@@ -715,7 +715,7 @@ export default function App() {
       setAuthState((prev) => ({
         ...prev,
         loading: false,
-        error: 'Missing Google client ID configuration.',
+        error: 'Missing Google client ID configuration. Set VITE_GOOGLE_CLIENT_ID in the front-end .env file.',
       }));
       return;
     }
