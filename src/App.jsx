@@ -2340,13 +2340,16 @@ export default function App() {
           <div className="authCard">
             <div className="authTitle">Sign in to continue</div>
             <p className="authSubtitle">Use your approved Google account to access the scheduler.</p>
-            <button className="authLoginButton" type="button" onClick={handleLoginClick}>
-              Login
-            </button>
             {authState.loading && <div className="authStatus">Checking authentication…</div>}
             {authState.error && <div className="authError">{authState.error}</div>}
           </div>
         </div>
+        <button
+          className="authSplineLoginHitbox"
+          type="button"
+          onClick={handleLoginClick}
+          aria-label="Sign in with Google"
+        />
       </div>
     );
   }
