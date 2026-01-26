@@ -136,15 +136,26 @@ input:-webkit-autofill:active{
 
 .authLoginStack{
   position: absolute;
-  left: 50%;
-  bottom: clamp(48px, 12vh, 120px);
-  transform: translateX(-50%);
+  left: clamp(120px, 18vw, 260px);
+  top: clamp(360px, 56vh, 520px);
+  transform: none;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: flex-start;
   gap: 0;
-  width: min(320px, 80vw);
+  width: min(320px, 70vw);
   z-index: 2;
+}
+
+@media (max-width: 900px){
+  .authLoginStack{
+    left: 50%;
+    top: auto;
+    bottom: clamp(48px, 12vh, 120px);
+    transform: translateX(-50%);
+    align-items: center;
+    width: min(320px, 80vw);
+  }
 }
 
 .authSplineLoginHitbox{
