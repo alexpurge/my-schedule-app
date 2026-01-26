@@ -2003,8 +2003,8 @@ export default function App() {
       setStatus('Running Apify batches...');
       setProgress(55);
 
-      const keywordColumns = getKeywordColumns(kept);
-      const urlKeywordMap = buildUrlKeywordMap(kept, keywordColumns);
+      const apifyKeywordColumns = getKeywordColumns(kept);
+      const urlKeywordMap = buildUrlKeywordMap(kept, apifyKeywordColumns);
       const allUrls = urlKeywordMap.size ? Array.from(urlKeywordMap.keys()) : extractUrls(kept);
       setStats((s) => ({ ...s, urlsForApify: allUrls.length }));
 
@@ -2091,8 +2091,8 @@ export default function App() {
               const keywords = matchedUrl ? Array.from(urlKeywordMap.get(matchedUrl) || []) : [];
               const enrichedItem = { ...item };
 
-              if (keywordColumns.length > 0) {
-                keywordColumns.forEach((col, idx) => {
+              if (apifyKeywordColumns.length > 0) {
+                apifyKeywordColumns.forEach((col, idx) => {
                   enrichedItem[col] = keywords[idx] || '';
                 });
               }
@@ -2135,8 +2135,8 @@ export default function App() {
         }
       }
 
-      if (keywordColumns.length > 0) {
-        for (const col of keywordColumns) {
+      if (apifyKeywordColumns.length > 0) {
+        for (const col of apifyKeywordColumns) {
           if (!keySet.has(col)) {
             keySet.add(col);
             allKeys.push(col);
