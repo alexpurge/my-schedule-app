@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Activity, PauseCircle } from 'lucide-react';
 
 const STAGE_LABELS = {
@@ -21,6 +21,7 @@ const DashboardOverview = ({ isRunning, stage, stats }) => {
   const runningDetail = isRunning
     ? `Currently on ${stageLabel}`
     : 'Standing by for the next run.';
+  const [splineLoaded, setSplineLoaded] = useState(false);
 
   return (
     <div className="dashboardLayout">
@@ -60,7 +61,11 @@ const DashboardOverview = ({ isRunning, stage, stats }) => {
         </div>
       </section>
 
-      <section className="dashboardSplinePanel" data-running={isRunning}>
+      <section
+        className="dashboardSplinePanel"
+        data-running={isRunning}
+        data-loaded={splineLoaded}
+      >
         <iframe
           title="Interactive AI orb"
           src="https://my.spline.design/interactiveaiwebsite-3w5BVhq8qlQKX5pWGHQkWVGG/"
@@ -68,6 +73,7 @@ const DashboardOverview = ({ isRunning, stage, stats }) => {
           loading="lazy"
           allow={isRunning ? 'autoplay; fullscreen' : 'fullscreen'}
           referrerPolicy="no-referrer"
+          onLoad={() => setSplineLoaded(true)}
         />
       </section>
     </div>
