@@ -136,9 +136,9 @@ input:-webkit-autofill:active{
 
 .authSplineLoginHitbox{
   position: absolute;
-  left: 50%;
+  left: clamp(24px, 8vw, 120px);
   bottom: 120px;
-  transform: translateX(-50%);
+  transform: none;
   width: min(240px, 70vw);
   height: 64px;
   border: none;
@@ -148,7 +148,7 @@ input:-webkit-autofill:active{
   z-index: 2;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .authSplineLoginHitbox:focus-visible{
