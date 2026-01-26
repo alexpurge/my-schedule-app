@@ -626,6 +626,7 @@ export default function App() {
   const [welcomePhase, setWelcomePhase] = useState('idle');
   const [welcomeText, setWelcomeText] = useState('');
   const welcomeStartedRef = useRef(false);
+  const WELCOME_HOLD_MS = 500;
 
   useEffect(() => {
     let isMounted = true;
@@ -707,6 +708,7 @@ export default function App() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Sign in was not authorized.');
       }
+      const data = await res.json().catch(() => ({}));
       setAuthState({ loading: false, authenticated: true, error: null });
       setAuthUser(data.name || data.email || null);
     } catch (err) {
@@ -754,9 +756,9 @@ export default function App() {
     if (welcomePhase !== 'hold') return;
     const timer = setTimeout(() => {
       setWelcomePhase('fade-out');
-    }, 500);
+    }, WELCOME_HOLD_MS);
     return () => clearTimeout(timer);
-  }, [welcomePhase]);
+  }, [welcomePhase, WELCOME_HOLD_MS]);
 
   useEffect(() => {
     if (welcomePhase !== 'fade-out') return;
