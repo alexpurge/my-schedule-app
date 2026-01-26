@@ -2336,14 +2336,12 @@ export default function App() {
             allow="autoplay; fullscreen"
           />
         </div>
-        <div className="authOverlay">
-          <div className="authCard">
-            <div className="authTitle">Sign in to continue</div>
-            <p className="authSubtitle">Use your approved Google account to access the scheduler.</p>
+        {(authState.loading || authState.error) && (
+          <div className="authNotice" role="status" aria-live="polite">
             {authState.loading && <div className="authStatus">Checking authentication…</div>}
             {authState.error && <div className="authError">{authState.error}</div>}
           </div>
-        </div>
+        )}
         <button
           className="authSplineLoginHitbox"
           type="button"

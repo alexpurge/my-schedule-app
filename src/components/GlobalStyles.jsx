@@ -117,37 +117,21 @@ input:-webkit-autofill:active{
   transform: translateZ(0);
 }
 
-.authOverlay{
-  position: relative;
+.authNotice{
+  position: absolute;
+  right: 32px;
+  bottom: 32px;
   z-index: 1;
-  width: min(520px, 100%);
-  display: flex;
-  justify-content: center;
-}
-
-.authCard{
-  width: 100%;
-  background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
-  border: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
-  backdrop-filter: blur(12px);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-  padding: 32px;
-  text-align: center;
+  background: color-mix(in srgb, var(--bg-surface) 80%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+  border-radius: 12px;
+  padding: 12px 16px;
+  box-shadow: var(--shadow-md);
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
-.authTitle{
-  font-size: 22px;
-  font-weight: 700;
-}
-
-.authSubtitle{
-  margin: 0;
-  color: var(--text-muted);
-  font-size: 14px;
+  gap: 8px;
+  max-width: min(320px, 80vw);
+  text-align: left;
 }
 
 .authSplineLoginHitbox{
