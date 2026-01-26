@@ -819,19 +819,21 @@ input:-webkit-autofill:active{
 }
 .dashboardSplinePanel{
   position: relative;
+left: -100px; 
+transform: scale(1.5); 
   border-radius: 0;
   border: none;
   background: transparent;
   box-shadow: none;
   overflow: hidden;
-  min-height: 420px;
+  min-height: 600px;
 }
 .dashboardSplinePanel iframe{
   width: 100%;
   height: 100%;
   border: 0;
   display: block;
-  transform: translate(0, -6%) scale(1.4);
+  transform: translate(, 10%) scale(1.1);
   transform-origin: center;
 }
 .dashboardSplinePlaceholder{
