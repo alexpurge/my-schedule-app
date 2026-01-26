@@ -711,37 +711,6 @@ export default function App() {
     }
   }, [authState.authenticated]);
 
-  const initialScopesRequestedRef = useRef(false);
-
-  const handleGoogleCredential = useCallback(async (response) => {
-    if (!response?.credential) {
-      setAuthState({ loading: false, authenticated: false, error: 'Google Sign In failed.' });
-      return;
-    }
-    setAuthState((prev) => ({ ...prev, loading: true, error: null }));
-    try {
-      const res = await fetch('/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ credential: response.credential }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Sign in was not authorized.');
-      }
-      const data = await res.json().catch(() => ({}));
-      setAuthState({ loading: false, authenticated: true, error: null });
-      setAuthUser(data.name || data.email || null);
-    } catch (err) {
-      setAuthState({
-        loading: false,
-        authenticated: false,
-        error: err instanceof Error ? err.message : 'Sign in failed.',
-      });
-    }
-  }, []);
-
   useLayoutEffect(() => {
     if (!authState.authenticated || welcomeStartedRef.current) return;
     welcomeStartedRef.current = true;
@@ -789,25 +758,6 @@ export default function App() {
     }, 500);
     return () => clearTimeout(timer);
   }, [welcomePhase]);
-
-  useEffect(() => {
-    if (authState.authenticated || !googleScriptReady) return;
-    if (!googleClientId) {
-      setAuthState((prev) => ({
-        ...prev,
-        loading: false,
-        error: 'Missing Google client ID configuration. Set VITE_GOOGLE_CLIENT_ID in the front-end .env file.',
-      }));
-      return;
-    }
-    const google = window.google;
-    if (!google?.accounts?.id) return;
-    google.accounts.id.initialize({
-      client_id: googleClientId,
-      callback: handleGoogleCredential,
-    });
-    setGoogleReady(true);
-  }, [authState.authenticated, googleClientId, googleScriptReady, handleGoogleCredential]);
 
   const googleSheetsScopes = useMemo(
     () => [
@@ -859,6 +809,64 @@ export default function App() {
     },
     [requestSheetsAccessToken, sheetsAccessToken, sheetsAccessTokenExpiresAt]
   );
+
+  const initialScopesRequestedRef = useRef(false);
+
+  const handleGoogleCredential = useCallback(
+    async (response) => {
+      if (!response?.credential) {
+        setAuthState({ loading: false, authenticated: false, error: 'Google Sign In failed.' });
+        return;
+      }
+      setAuthState((prev) => ({ ...prev, loading: true, error: null }));
+      try {
+        const res = await fetch('/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ credential: response.credential }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.error || 'Sign in was not authorized.');
+        }
+        const data = await res.json().catch(() => ({}));
+        setAuthState({ loading: false, authenticated: true, error: null });
+        setAuthUser(data.name || data.email || null);
+        try {
+          await ensureSheetsAccessToken('consent');
+        } catch (error) {
+          console.warn('Google Sheets permissions not granted on login.', error);
+        }
+      } catch (err) {
+        setAuthState({
+          loading: false,
+          authenticated: false,
+          error: err instanceof Error ? err.message : 'Sign in failed.',
+        });
+      }
+    },
+    [ensureSheetsAccessToken]
+  );
+
+  useEffect(() => {
+    if (authState.authenticated || !googleScriptReady) return;
+    if (!googleClientId) {
+      setAuthState((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Missing Google client ID configuration. Set VITE_GOOGLE_CLIENT_ID in the front-end .env file.',
+      }));
+      return;
+    }
+    const google = window.google;
+    if (!google?.accounts?.id) return;
+    google.accounts.id.initialize({
+      client_id: googleClientId,
+      callback: handleGoogleCredential,
+    });
+    setGoogleReady(true);
+  }, [authState.authenticated, googleClientId, googleScriptReady, handleGoogleCredential]);
 
   useEffect(() => {
     if (!authState.authenticated) {
