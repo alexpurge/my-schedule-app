@@ -97,12 +97,39 @@ input:-webkit-autofill:active{
   align-items: center;
   justify-content: center;
   padding: 32px;
+  position: relative;
+  overflow: hidden;
+}
+
+.authSplineFrame{
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
+
+.authSplineFrame iframe{
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  transform: translateZ(0);
+}
+
+.authOverlay{
+  position: relative;
+  z-index: 1;
+  width: min(520px, 100%);
+  display: flex;
+  justify-content: center;
 }
 
 .authCard{
-  width: min(420px, 100%);
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
+  width: 100%;
+  background: color-mix(in srgb, var(--bg-surface) 82%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 75%, transparent);
+  backdrop-filter: blur(12px);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-lg);
   padding: 32px;
@@ -123,9 +150,27 @@ input:-webkit-autofill:active{
   font-size: 14px;
 }
 
-.authButton{
-  display: flex;
-  justify-content: center;
+.authLoginButton{
+  border: none;
+  border-radius: 999px;
+  padding: 12px 26px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #0f172a;
+  background: #f8fafc;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.15);
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.authLoginButton:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.2);
+}
+
+.authLoginButton:active{
+  transform: translateY(0);
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.18);
 }
 
 .authStatus{
