@@ -51,9 +51,6 @@ const SettingsPanel = ({
   presetUrlColumn,
   presetMatchMode,
   sheetSyncEnabled,
-  setSheetSyncEnabled,
-  sheetSpreadsheetId,
-  setSheetSpreadsheetId,
   sheetTabPrefix,
   setSheetTabPrefix,
   sheetAppendMode,
@@ -145,40 +142,18 @@ const SettingsPanel = ({
         <div className="cardHeader">
           <div className="cardHeaderTitle">
             <Settings size={16} style={{ color: 'var(--color-primary)' }} />
-            Google Sheets Sync
+            Google Sheets Sync (Advanced)
           </div>
           <div className="cardHeaderTitle" style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
-            Store pipeline stages in a selected spreadsheet
+            Tune sheet behavior for bulk initial pull runs
           </div>
         </div>
         <div className="cardBody">
-          <div className="toggleRow" style={{ marginTop: 0 }}>
-            <div className="toggleMeta">
-              <div className="toggleLabel">Enable Sheets Sync</div>
-              <div className="toggleHint">{sheetSyncEnabled ? 'On' : 'Off'}</div>
-            </div>
-            <label className="switch">
-              <input
-                type="checkbox"
-                checked={sheetSyncEnabled}
-                onChange={(e) => setSheetSyncEnabled(e.target.checked)}
-              />
-              <span className="switchSlider" />
-            </label>
+          <div className="smallNote" style={{ marginTop: 0 }}>
+            Enable Sheets Sync in the Bulk Initial Pull panel to use these options.
           </div>
 
-          <div style={{ marginTop: 14 }}>
-            <label className="label">Spreadsheet ID</label>
-            <input
-              className="input"
-              value={sheetSpreadsheetId}
-              onChange={(e) => setSheetSpreadsheetId(e.target.value)}
-              placeholder="Paste the Google Sheet ID"
-              disabled={!sheetSyncEnabled || isRunning}
-            />
-          </div>
-
-          <div style={{ marginTop: 14 }}>
+          <div style={{ marginTop: 0 }}>
             <label className="label">Sheet tab prefix (optional)</label>
             <input
               className="input"

@@ -25,6 +25,13 @@ const DashboardPanel = ({
   setWatchdogMaxRuntime,
   memory,
   setMemory,
+  sheetSyncEnabled,
+  setSheetSyncEnabled,
+  sheetSpreadsheetId,
+  setSheetSpreadsheetId,
+  recentSheets,
+  rememberRecentSheet,
+  sheetStatus,
   isRunning,
   runPipeline,
   logs,
@@ -54,6 +61,8 @@ const DashboardPanel = ({
     purified: purifiedRows.length > 0 || sheetStageAvailability?.purified,
     master_filter: filteredRows.length > 0 || sheetStageAvailability?.master_filter,
   };
+
+  const hasRecentSheets = Array.isArray(recentSheets) && recentSheets.length > 0;
 
   return (
     <div className="grid">
@@ -227,6 +236,75 @@ const DashboardPanel = ({
                 onChange={(e) => setMemory(Number(e.target.value) || 0)}
                 disabled={isRunning}
               />
+            </div>
+          </div>
+
+          <div style={{ marginTop: 16, borderTop: '1px solid var(--color-border)', paddingTop: 16 }}>
+            <div className="toggleRow" style={{ marginTop: 0 }}>
+              <div className="toggleMeta">
+                <div className="toggleLabel">Enable Sheets Sync</div>
+                <div className="toggleHint">
+                  {sheetSyncEnabled ? 'On' : 'Off'} • Recommended for large pulls
+                </div>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={sheetSyncEnabled}
+                  onChange={(e) => setSheetSyncEnabled(e.target.checked)}
+                  disabled={isRunning}
+                />
+                <span className="switchSlider" />
+              </label>
+            </div>
+
+            <div style={{ marginTop: 14 }}>
+              <label className="label">Recent Sheets</label>
+              <select
+                className="select"
+                value=""
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  if (!nextValue) return;
+                  setSheetSpreadsheetId(nextValue);
+                  rememberRecentSheet(nextValue);
+                }}
+                disabled={!sheetSyncEnabled || isRunning || !hasRecentSheets}
+              >
+                <option value="">
+                  {hasRecentSheets ? 'Select a recent sheet' : 'No recent sheets yet'}
+                </option>
+                {hasRecentSheets &&
+                  recentSheets.map((id) => (
+                    <option key={id} value={id}>
+                      {id}
+                    </option>
+                  ))}
+              </select>
+            </div>
+
+            <div style={{ marginTop: 14 }}>
+              <label className="label">Spreadsheet ID</label>
+              <input
+                className="input"
+                value={sheetSpreadsheetId}
+                onChange={(e) => setSheetSpreadsheetId(e.target.value)}
+                onBlur={() => rememberRecentSheet(sheetSpreadsheetId)}
+                placeholder="Paste the Google Sheet ID"
+                disabled={!sheetSyncEnabled || isRunning}
+              />
+              {sheetStatus?.configured ? (
+                <div className="smallNote" style={{ marginTop: 8 }}>
+                  <b>Status:</b>{' '}
+                  {sheetStatus.serviceAccountEmail
+                    ? `Service account ready (${sheetStatus.serviceAccountEmail})`
+                    : 'Service account ready'}
+                </div>
+              ) : (
+                <div className="smallNote" style={{ marginTop: 8 }}>
+                  <b>Status:</b> Server not configured for Sheets yet
+                </div>
+              )}
             </div>
           </div>
 
