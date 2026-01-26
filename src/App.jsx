@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import DashboardPanel from './components/DashboardPanel';
 import GlobalStyles from './components/GlobalStyles';
 import ProgressBar from './components/ProgressBar';
@@ -720,7 +720,7 @@ export default function App() {
     }
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!authState.authenticated || welcomeStartedRef.current) return;
     welcomeStartedRef.current = true;
     setWelcomeText('');
@@ -2409,12 +2409,8 @@ export default function App() {
     };
   }, [watchdogJobs]);
 
-  const showWelcomeOverlay = welcomePhase !== 'idle' && welcomePhase !== 'done';
-  const showAppContent =
-    welcomePhase === 'typing' ||
-    welcomePhase === 'hold' ||
-    welcomePhase === 'fade-out' ||
-    welcomePhase === 'done';
+  const showWelcomeOverlay = authState.authenticated && welcomePhase !== 'done';
+  const showAppContent = welcomePhase === 'fade-out' || welcomePhase === 'done';
   const welcomeOverlayClassName = [
     'welcomeOverlay',
     welcomePhase === 'fade-in' ? 'fade-in' : '',
@@ -2466,17 +2462,8 @@ export default function App() {
 
   if (!showAppContent) {
     return (
-      <div className="pipelineShell authShell" data-theme={theme}>
+      <div className="pipelineShell welcomeShell" data-theme={theme}>
         <GlobalStyles />
-        <div className="authSplineFrame" aria-hidden="true">
-          <iframe
-            title="Reactive Orb background"
-            src="https://my.spline.design/reactiveorb-3gF6RAL6Ew7QKrNvj2iYlMvu/"
-            loading="eager"
-            referrerPolicy="no-referrer"
-            allow="autoplay; fullscreen"
-          />
-        </div>
         {showWelcomeOverlay && (
           <div className={welcomeOverlayClassName} aria-live="polite" aria-label="Welcome message">
             <div className="welcomeOverlayText">{welcomeText}</div>
