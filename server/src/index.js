@@ -157,6 +157,21 @@ const getGoogleAuth = (scopes) => {
 const getSheetsAuth = () => getGoogleAuth(["https://www.googleapis.com/auth/spreadsheets"]);
 const getDriveAuth = () => getGoogleAuth(["https://www.googleapis.com/auth/drive.readonly"]);
 
+const getAccessTokenFromRequest = (req) => {
+  const header = req.headers?.authorization || "";
+  if (!header.startsWith("Bearer ")) return null;
+  return header.slice("Bearer ".length).trim() || null;
+};
+
+const getAuthHeaders = async (accessToken, fallbackAuth) => {
+  if (accessToken) {
+    return { Authorization: `Bearer ${accessToken}` };
+  }
+  const auth = fallbackAuth();
+  if (!auth) return null;
+  return auth.getRequestHeaders();
+};
+
 const buildSheetsUrl = (spreadsheetId, path, query) => {
   const url = new URL(`https://sheets.googleapis.com/v4/spreadsheets/${spreadsheetId}${path}`);
   if (query && typeof query === "object") {
@@ -168,12 +183,11 @@ const buildSheetsUrl = (spreadsheetId, path, query) => {
   return url;
 };
 
-const requestSheetsApi = async ({ spreadsheetId, path, method = "GET", query, body }) => {
-  const auth = getSheetsAuth();
-  if (!auth) {
-    return { ok: false, status: 500, data: { error: "Sheets API is not configured on the server." } };
+const requestSheetsApi = async ({ spreadsheetId, path, method = "GET", query, body, accessToken }) => {
+  const headers = await getAuthHeaders(accessToken, getSheetsAuth);
+  if (!headers) {
+    return { ok: false, status: 500, data: { error: "Sheets API is not configured for this server or user." } };
   }
-  const headers = await auth.getRequestHeaders();
   const url = buildSheetsUrl(spreadsheetId, path, query);
   const res = await fetch(url, {
     method,
@@ -204,12 +218,11 @@ const buildDriveUrl = (path, query) => {
   return url;
 };
 
-const requestDriveApi = async ({ path, method = "GET", query }) => {
-  const auth = getDriveAuth();
-  if (!auth) {
-    return { ok: false, status: 500, data: { error: "Drive API is not configured on the server." } };
+const requestDriveApi = async ({ path, method = "GET", query, accessToken }) => {
+  const headers = await getAuthHeaders(accessToken, getDriveAuth);
+  if (!headers) {
+    return { ok: false, status: 500, data: { error: "Drive API is not configured for this server or user." } };
   }
-  const headers = await auth.getRequestHeaders();
   const url = buildDriveUrl(path, query);
   const res = await fetch(url, {
     method,
@@ -228,11 +241,12 @@ const requestDriveApi = async ({ path, method = "GET", query }) => {
   return { ok: res.ok, status: res.status, data: payload };
 };
 
-const ensureSheetExists = async (spreadsheetId, sheetTitle) => {
+const ensureSheetExists = async (spreadsheetId, sheetTitle, accessToken) => {
   const meta = await requestSheetsApi({
     spreadsheetId,
     path: "",
     query: { fields: "sheets.properties" },
+    accessToken,
   });
   if (!meta.ok) return meta;
   const sheets = meta.data?.sheets || [];
@@ -245,6 +259,7 @@ const ensureSheetExists = async (spreadsheetId, sheetTitle) => {
     body: {
       requests: [{ addSheet: { properties: { title: sheetTitle } } }],
     },
+    accessToken,
   });
 };
 
@@ -252,10 +267,22 @@ const normalizeRows = (headers, rows) =>
   rows.map((row) => headers.map((header) => (row && row[header] !== undefined ? row[header] : "")));
 
 app.get("/sheets/status", (req, res) => {
+  const accessToken = getAccessTokenFromRequest(req);
+  if (accessToken) {
+    res.json({
+      configured: true,
+      mode: "user",
+      accountEmail: req.user?.email || null,
+      serviceAccountEmail: null,
+    });
+    return;
+  }
   const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
   const privateKey = process.env.GOOGLE_PRIVATE_KEY;
   res.json({
     configured: Boolean(clientEmail && privateKey),
+    mode: clientEmail && privateKey ? "service_account" : "none",
+    accountEmail: null,
     serviceAccountEmail: clientEmail || null,
   });
 });
@@ -264,6 +291,7 @@ app.get("/sheets/recent", async (req, res) => {
   const rawLimit = Number(req.query.limit || 10);
   const limit = Number.isFinite(rawLimit) ? Math.min(25, Math.max(1, rawLimit)) : 10;
   try {
+    const accessToken = getAccessTokenFromRequest(req);
     const recentRes = await requestDriveApi({
       path: "/files",
       query: {
@@ -272,6 +300,7 @@ app.get("/sheets/recent", async (req, res) => {
         pageSize: limit,
         fields: "files(id,name,modifiedTime,webViewLink)",
       },
+      accessToken,
     });
 
     if (!recentRes.ok) {
@@ -304,7 +333,8 @@ app.post("/sheets/sync", async (req, res) => {
   }
 
   try {
-    const ensureRes = await ensureSheetExists(spreadsheetId, sheetTitle);
+    const accessToken = getAccessTokenFromRequest(req);
+    const ensureRes = await ensureSheetExists(spreadsheetId, sheetTitle, accessToken);
     if (!ensureRes.ok) {
       res.status(ensureRes.status).json(ensureRes.data || { error: "Unable to access spreadsheet." });
       return;
@@ -318,6 +348,7 @@ app.post("/sheets/sync", async (req, res) => {
         spreadsheetId,
         path: `/values/${range}:clear`,
         method: "POST",
+        accessToken,
       });
 
       const payloadValues = [headers, ...values];
@@ -327,6 +358,7 @@ app.post("/sheets/sync", async (req, res) => {
         method: "PUT",
         query: { valueInputOption: "RAW" },
         body: { values: payloadValues },
+        accessToken,
       });
       res.status(updateRes.ok ? 200 : updateRes.status).json({
         ok: updateRes.ok,
@@ -339,6 +371,7 @@ app.post("/sheets/sync", async (req, res) => {
       spreadsheetId,
       path: `/values/${range}`,
       query: { majorDimension: "ROWS" },
+      accessToken,
     });
     const hasHeader = Array.isArray(headerCheck.data?.values) && headerCheck.data.values.length > 0;
     const payloadValues = hasHeader ? values : [headers, ...values];
@@ -354,6 +387,7 @@ app.post("/sheets/sync", async (req, res) => {
       method: "POST",
       query: { valueInputOption: "RAW", insertDataOption: "INSERT_ROWS" },
       body: { values: payloadValues },
+      accessToken,
     });
 
     res.status(appendRes.ok ? 200 : appendRes.status).json({
@@ -374,11 +408,13 @@ app.post("/sheets/read", async (req, res) => {
   }
 
   try {
+    const accessToken = getAccessTokenFromRequest(req);
     const range = encodeURIComponent(sheetTitle);
     const readRes = await requestSheetsApi({
       spreadsheetId,
       path: `/values/${range}`,
       query: { majorDimension: "ROWS" },
+      accessToken,
     });
 
     if (!readRes.ok) {

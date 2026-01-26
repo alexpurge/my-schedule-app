@@ -198,8 +198,10 @@ const SettingsPanel = ({
           <div className="smallNote" style={{ marginTop: 14 }}>
             <b>Status:</b>{' '}
             {sheetStatus?.configured
-              ? `Server connected (${sheetStatus.serviceAccountEmail || 'service account'})`
-              : 'Server not configured for Sheets yet'}
+              ? sheetStatus.mode === 'user'
+                ? `Connected as ${sheetStatus.accountEmail || 'signed-in user'}`
+                : `Service account ready (${sheetStatus.serviceAccountEmail || 'service account'})`
+              : 'Not connected yet'}
           </div>
 
           <button
@@ -212,9 +214,11 @@ const SettingsPanel = ({
             Refresh Sheets Status
           </button>
 
-          <div className="smallNote" style={{ marginTop: 12 }}>
-            <b>Reminder:</b> Share the spreadsheet with the service account email above so it can write to new tabs.
-          </div>
+          {sheetStatus?.mode === 'service_account' && (
+            <div className="smallNote" style={{ marginTop: 12 }}>
+              <b>Reminder:</b> Share the spreadsheet with the service account email above so it can write to new tabs.
+            </div>
+          )}
         </div>
       </div>
 
