@@ -317,8 +317,20 @@ const ensureSheetExists = async (spreadsheetId, sheetTitle, accessToken) => {
   });
 };
 
+const normalizeCellValue = (value) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") return String(value);
+  if (value instanceof Date) return value.toISOString();
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
 const normalizeRows = (headers, rows) =>
-  rows.map((row) => headers.map((header) => (row && row[header] !== undefined ? row[header] : "")));
+  rows.map((row) => headers.map((header) => normalizeCellValue(row?.[header])));
 
 app.get("/sheets/status", (req, res) => {
   diagLog("route entry: GET /sheets/status");
