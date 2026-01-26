@@ -823,7 +823,7 @@ input:-webkit-autofill:active{
   border: none;
   background: transparent;
   box-shadow: none;
-  overflow: visible;
+  overflow: hidden;
   min-height: 420px;
 }
 .dashboardSplinePanel iframe{
@@ -831,6 +831,8 @@ input:-webkit-autofill:active{
   height: 100%;
   border: 0;
   display: block;
+  transform: translate(0, -6%) scale(1.4);
+  transform-origin: center;
 }
 .dashboardSplinePlaceholder{
   position: absolute;
