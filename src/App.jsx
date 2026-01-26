@@ -2370,20 +2370,25 @@ export default function App() {
             {authState.error && <div className="authError">{authState.error}</div>}
           </div>
         )}
-        <div
-          className="authSplineLoginHitbox"
-          role="button"
-          tabIndex={0}
-          onClick={handleLoginClick}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' || event.key === ' ') {
-              event.preventDefault();
-              handleLoginClick();
-            }
-          }}
-          aria-label="Sign in with Google"
-        >
-          <div className="authGoogleButton" ref={googleButtonRef} />
+        <div className="authLoginStack">
+          <div className="authLoginCopy">
+            Sign in to keep your schedule in sync across devices.
+          </div>
+          <div
+            className="authSplineLoginHitbox"
+            role="button"
+            tabIndex={0}
+            onClick={handleLoginClick}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                handleLoginClick();
+              }
+            }}
+            aria-label="Sign in with Google"
+          >
+            <div className="authGoogleButton" ref={googleButtonRef} />
+          </div>
         </div>
       </div>
     );
