@@ -62,7 +62,7 @@ app.get("/auth/me", (req, res) => {
     res.json({ authenticated: false });
     return;
   }
-  res.json({ authenticated: true, email: session.email });
+  res.json({ authenticated: true, email: session.email, name: session.name });
 });
 
 app.post("/auth/login", async (req, res) => {
@@ -85,6 +85,7 @@ app.post("/auth/login", async (req, res) => {
     });
     const payload = ticket.getPayload();
     const email = payload?.email;
+    const name = payload?.name || payload?.given_name || email;
     if (!email) {
       res.status(400).json({ error: "Google account missing email." });
       return;
@@ -94,14 +95,14 @@ app.post("/auth/login", async (req, res) => {
       return;
     }
     const sessionId = crypto.randomUUID();
-    sessions.set(sessionId, { email, createdAt: Date.now() });
+    sessions.set(sessionId, { email, name, createdAt: Date.now() });
     res.cookie(SESSION_COOKIE, sessionId, {
       httpOnly: true,
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       maxAge: 8 * 60 * 60 * 1000,
     });
-    res.json({ ok: true, email });
+    res.json({ ok: true, email, name });
   } catch (error) {
     console.error("Google auth error:", error);
     const detail = error instanceof Error ? error.message : "Unknown error";
