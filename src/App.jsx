@@ -754,12 +754,11 @@ export default function App() {
 
   /**
    * ============================================================
-   *  APIFY AUTH (UNCHANGED)
+   *  APIFY AUTH (SERVER-SUPPLIED)
    * ============================================================
    */
-  const [apiToken, setApiToken] = useState('');
+  const [apifyToken, setApifyToken] = useState('');
   const [memory, setMemory] = useState(128);
-  const [customProxy, setCustomProxy] = useState('');
 
   /**
    * ============================================================
@@ -768,7 +767,6 @@ export default function App() {
    * ============================================================
    */
   const [watchdogActorId, setWatchdogActorId] = useState(WATCHDOG_DEFAULT_ACTOR_ID);
-  const [watchdogProxyType, setWatchdogProxyType] = useState('custom'); // apify | custom
   const [watchdogKeywordsInput, setWatchdogKeywordsInput] = useState('');
   const [watchdogCountry, setWatchdogCountry] = useState('AU');
   const [watchdogActiveStatus, setWatchdogActiveStatus] = useState('active');
@@ -826,6 +824,33 @@ export default function App() {
   const [error, setError] = useState(null);
 
   const stopRef = useRef(false);
+
+  useEffect(() => {
+    if (!authState.authenticated) return;
+    let active = true;
+
+    const fetchApifyToken = async () => {
+      try {
+        const res = await fetch('/apify/token', { credentials: 'include' });
+        if (!res.ok) {
+          const message = await res.text();
+          throw new Error(message || `Token request failed (${res.status})`);
+        }
+        const data = await res.json();
+        if (active) setApifyToken(String(data?.token || '').trim());
+      } catch (err) {
+        if (!active) return;
+        setApifyToken('');
+        setError(err instanceof Error ? err.message : 'Unable to load Apify token.');
+      }
+    };
+
+    fetchApifyToken();
+
+    return () => {
+      active = false;
+    };
+  }, [authState.authenticated]);
 
   /**
    * ============================================================
@@ -1026,7 +1051,7 @@ export default function App() {
   const abortWatchdogJob = useCallback(
     async (job, reason) => {
       if (!job?.runId) return;
-      const apiKey = apiToken.trim();
+      const apiKey = apifyToken.trim();
       if (!apiKey) return;
       let finalStatus = null;
 
@@ -1071,7 +1096,7 @@ export default function App() {
         addLog(`[WATCHDOG] Abort failed for "${job.keyword}".`, 'warning');
       }
     },
-    [addLog, apiToken, updateWatchdogJob, waitForWatchdogFinalStatus, watchdogActorId]
+    [addLog, apifyToken, updateWatchdogJob, waitForWatchdogFinalStatus, watchdogActorId]
   );
 
   /**
@@ -1081,8 +1106,8 @@ export default function App() {
    * ============================================================
    */
   const runWatchdogAndExportRows = useCallback(async () => {
-    const apiKey = apiToken.trim();
-    if (!apiKey) throw new Error('API Key is required!');
+    const apiKey = apifyToken.trim();
+    if (!apiKey) throw new Error('Apify token is unavailable from the backend.');
     if (!watchdogMinDate) throw new Error('Minimum Date is CRITICAL. Please set it.');
     if (!watchdogKeywordsInput.trim()) throw new Error('Please enter at least one keyword.');
 
@@ -1175,10 +1200,7 @@ export default function App() {
         sortBy: 'mostRecent',
         activeStatus: watchdogActiveStatus,
         advertisers: [],
-        proxyConfiguration:
-          watchdogProxyType === 'apify'
-            ? { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'] }
-            : { useApifyProxy: false, proxyUrls: [customProxy] },
+        proxyConfiguration: { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'] },
       };
 
       if (watchdogMinDate) inputBody.searchStartDate = watchdogMinDate;
@@ -1536,8 +1558,7 @@ export default function App() {
     abortWatchdogJob,
     addLog,
     allowSet,
-    apiToken,
-    customProxy,
+    apifyToken,
     dateViolationEnabled,
     dateViolationStreakLimit,
     memory,
@@ -1552,7 +1573,6 @@ export default function App() {
     watchdogMaxItems,
     watchdogMaxRuntime,
     watchdogMinDate,
-    watchdogProxyType,
   ]);
 
   /**
@@ -1566,15 +1586,12 @@ export default function App() {
         const inputPayload = {
           startUrls: batchUrls,
           proxyConfiguration: {
-            useApifyProxy: false,
+            useApifyProxy: true,
+            apifyProxyGroups: ['RESIDENTIAL'],
           },
         };
 
-        if (customProxy.trim()) {
-          inputPayload.proxyConfiguration.proxyUrls = [customProxy.trim()];
-        }
-
-        const token = encodeURIComponent(apiToken.trim());
+        const token = encodeURIComponent(apifyToken.trim());
         const startUrl = `https://api.apify.com/v2/acts/api-empire~facebook-pages-scraper/runs?token=${token}&memory=${memory}`;
         const startResponse = await fetch(startUrl, {
           method: 'POST',
@@ -1619,7 +1636,7 @@ export default function App() {
         return null;
       }
     },
-    [addLog, apiToken, customProxy, memory]
+    [addLog, apifyToken, memory]
   );
 
   const normalizeUrl = useCallback((raw) => {
@@ -1790,8 +1807,8 @@ export default function App() {
     stopRef.current = false;
 
     // Guard rails (NO POPUPS)
-    if (!apiToken.trim()) {
-      setError('Apify API Token is required.');
+    if (!apifyToken.trim()) {
+      setError('Apify token is unavailable from the backend.');
       setStage('error');
       setStatus('Missing Apify token.');
       return;
@@ -2059,7 +2076,7 @@ export default function App() {
 
       addLog(`Fetching dataset items from ${validIds.length} dataset(s)...`, 'info');
 
-      const token = encodeURIComponent(apiToken.trim());
+      const token = encodeURIComponent(apifyToken.trim());
       let allItems = [];
 
       for (let i = 0; i < validIds.length; i++) {
@@ -2230,7 +2247,7 @@ export default function App() {
     abortWatchdogJob,
     addLog,
     allowSet,
-    apiToken,
+    apifyToken,
     buildUrlKeywordMap,
     dedupColumn,
     extractUrls,
@@ -2380,16 +2397,10 @@ export default function App() {
                 setWatchdogMaxItems={setWatchdogMaxItems}
                 watchdogMaxConcurrency={watchdogMaxConcurrency}
                 setWatchdogMaxConcurrency={setWatchdogMaxConcurrency}
-                watchdogProxyType={watchdogProxyType}
-                setWatchdogProxyType={setWatchdogProxyType}
                 watchdogMaxRuntime={watchdogMaxRuntime}
                 setWatchdogMaxRuntime={setWatchdogMaxRuntime}
-                apiToken={apiToken}
-                setApiToken={setApiToken}
                 memory={memory}
                 setMemory={setMemory}
-                customProxy={customProxy}
-                setCustomProxy={setCustomProxy}
                 isRunning={isRunning}
                 runPipeline={runPipeline}
                 logs={logs}

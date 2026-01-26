@@ -1,17 +1,5 @@
 import React from 'react';
-import {
-  AlertCircle,
-  AlertTriangle,
-  CheckCircle,
-  Download,
-  Facebook,
-  FileDown,
-  Filter,
-  Layers,
-  Loader2,
-  Play,
-  X,
-} from 'lucide-react';
+import { AlertCircle, CheckCircle, Download, FileDown, Filter, Layers, Loader2, Play, X } from 'lucide-react';
 
 const DashboardPanel = ({
   watchdogKeywordsInput,
@@ -33,16 +21,10 @@ const DashboardPanel = ({
   setWatchdogMaxItems,
   watchdogMaxConcurrency,
   setWatchdogMaxConcurrency,
-  watchdogProxyType,
-  setWatchdogProxyType,
   watchdogMaxRuntime,
   setWatchdogMaxRuntime,
-  apiToken,
-  setApiToken,
   memory,
   setMemory,
-  customProxy,
-  setCustomProxy,
   isRunning,
   runPipeline,
   logs,
@@ -216,19 +198,6 @@ const DashboardPanel = ({
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
             <div>
-              <label className="label">Proxy Configuration</label>
-              <select
-                className="select"
-                value={watchdogProxyType}
-                onChange={(e) => setWatchdogProxyType(e.target.value)}
-                disabled={isRunning}
-              >
-                <option value="apify">Apify Proxy (Residential)</option>
-                <option value="custom">Custom Proxy</option>
-              </select>
-            </div>
-
-            <div>
               <label className="label">Max Runtime (Minutes)</label>
               <input
                 className="input"
@@ -239,62 +208,16 @@ const DashboardPanel = ({
                 placeholder="(optional)"
               />
             </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Apify Sign-In */}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <div className="cardHeader">
-          <div className="cardHeaderTitle">
-            <Facebook size={16} style={{ color: 'var(--color-primary)' }} />
-            Apify Sign-In
-          </div>
-          <div className="cardHeaderTitle" style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
-            One token • Full run
-          </div>
-        </div>
-
-        <div className="cardBody">
-          <div>
-            <label className="label">Apify API Token</label>
-            <input
-              className="input"
-              type="password"
-              value={apiToken}
-              onChange={(e) => setApiToken(e.target.value)}
-              disabled={isRunning}
-              placeholder="apify_api_..."
-            />
-          </div>
-
-          <div style={{ marginTop: 14 }}>
-            <label className="label">Memory Limit (MB)</label>
-            <input
-              className="input"
-              type="number"
-              value={memory}
-              onChange={(e) => setMemory(Number(e.target.value) || 0)}
-              disabled={isRunning}
-            />
-          </div>
-
-          <div style={{ marginTop: 14 }}>
-            <label className="label">Custom Proxy (Optional)</label>
-            <input
-              className="input"
-              type="text"
-              value={customProxy}
-              onChange={(e) => setCustomProxy(e.target.value)}
-              disabled={isRunning}
-              placeholder="http://user:pass@host:port"
-            />
-            <div className="smallNote" style={{ marginTop: 10 }}>
-              <AlertTriangle
-                size={14}
-                style={{ marginRight: 6, verticalAlign: 'text-bottom', color: 'var(--color-primary)' }}
+            <div>
+              <label className="label">Memory Limit (MB)</label>
+              <input
+                className="input"
+                type="number"
+                value={memory}
+                onChange={(e) => setMemory(Number(e.target.value) || 0)}
+                disabled={isRunning}
               />
-              Pages Scraper: Apify Proxy is disabled (custom proxy only). Bulk initial pull proxy mode is selectable above.
             </div>
           </div>
 
@@ -657,7 +580,6 @@ const DashboardPanel = ({
                             className="btn"
                             style={{ padding: '7px 10px' }}
                             type="button"
-                            disabled={!apiToken.trim() || isRunning === false ? false : false}
                             onClick={() => abortWatchdogJob(job, 'Manual Stop')}
                           >
                             <X size={14} />
