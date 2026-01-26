@@ -101,6 +101,12 @@ input:-webkit-autofill:active{
   overflow: hidden;
 }
 
+.welcomeShell{
+  align-items: center;
+  justify-content: center;
+  background: #000;
+}
+
 .welcomeOverlay{
   position: fixed;
   inset: 0;
