@@ -921,6 +921,15 @@ export default function App() {
     others: false,
   });
   const sheetSyncReady = sheetSyncEnabled && sheetSpreadsheetId.trim().length > 0;
+  const [recentSheets, setRecentSheets] = useState(() => {
+    try {
+      const raw = localStorage.getItem('pipeline_sheet_recent');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : [];
+    } catch {
+      return [];
+    }
+  });
 
   useEffect(() => {
     try {
@@ -933,6 +942,23 @@ export default function App() {
       /* ignore */
     }
   }, [sheetAppendMode, sheetAutoClear, sheetSpreadsheetId, sheetSyncEnabled, sheetTabPrefix]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('pipeline_sheet_recent', JSON.stringify(recentSheets));
+    } catch {
+      /* ignore */
+    }
+  }, [recentSheets]);
+
+  const rememberRecentSheet = useCallback((nextId) => {
+    const trimmed = safeToString(nextId).trim();
+    if (!trimmed) return;
+    setRecentSheets((prev) => {
+      const next = [trimmed, ...prev.filter((id) => id !== trimmed)];
+      return next.slice(0, 5);
+    });
+  }, []);
 
   /**
    * ============================================================
@@ -2176,8 +2202,10 @@ export default function App() {
       let maxKeywords = 0;
       let dupRemoved = 0;
 
-      for (const row of workingRows) {
+      const dedupChunk = 400;
+      for (let i = 0; i < workingRows.length; i += 1) {
         if (stopRef.current) throw new Error('Stopped by user.');
+        const row = workingRows[i];
         const key = safeToString(row[dedupColumn]).trim();
         const rowKeywords = extractKeywordsFromRow(row, keywordColumnsToUse);
         if (seen.has(key)) {
@@ -2190,19 +2218,29 @@ export default function App() {
           seen.add(key);
           const keywordSet = new Set();
           rowKeywords.forEach((keyword) => keywordSet.add(keyword));
-          dedupedMap.set(key, { row: { ...row }, keywords: keywordSet });
+          dedupedMap.set(key, { row, keywords: keywordSet });
         }
+
+        if (i % dedupChunk === 0) {
+          await sleep(0);
+          const pct = 35 + (i / Math.max(1, workingRows.length)) * 4; // 35 -> 39
+          setProgress(Math.min(39, Math.max(35, pct)));
+        }
+      }
+
+      if (sheetSyncReady && sheetAutoClear) {
+        workingRows.length = 0;
+        setRows([]);
       }
 
       for (const { row, keywords } of dedupedMap.values()) {
         const list = Array.from(keywords);
         maxKeywords = Math.max(maxKeywords, list.length);
-        const updatedRow = { ...row };
-        updatedRow[keywordColumn] = list[0] || '';
+        row[keywordColumn] = list[0] || '';
         for (let i = 1; i < list.length; i += 1) {
-          updatedRow[`${keywordColumn}_${i + 1}`] = list[i];
+          row[`${keywordColumn}_${i + 1}`] = list[i];
         }
-        deduped.push(updatedRow);
+        deduped.push(row);
       }
 
       if (maxKeywords > 1) {
@@ -2230,11 +2268,6 @@ export default function App() {
       });
 
       addLog(`Deduplicator: removed ${dupRemoved} duplicates (by "${dedupColumn}").`, dupRemoved ? 'warning' : 'success');
-
-      if (sheetSyncReady && sheetAutoClear) {
-        workingRows.length = 0;
-        setRows([]);
-      }
 
       workingRows = deduped;
 
@@ -2854,9 +2887,6 @@ export default function App() {
                 presetUrlColumn={PRESET_URL_COLUMN}
                 presetMatchMode={PRESET_MATCH_MODE}
                 sheetSyncEnabled={sheetSyncEnabled}
-                setSheetSyncEnabled={setSheetSyncEnabled}
-                sheetSpreadsheetId={sheetSpreadsheetId}
-                setSheetSpreadsheetId={setSheetSpreadsheetId}
                 sheetTabPrefix={sheetTabPrefix}
                 setSheetTabPrefix={setSheetTabPrefix}
                 sheetAppendMode={sheetAppendMode}
@@ -2894,6 +2924,13 @@ export default function App() {
                 setWatchdogMaxRuntime={setWatchdogMaxRuntime}
                 memory={memory}
                 setMemory={setMemory}
+                sheetSyncEnabled={sheetSyncEnabled}
+                setSheetSyncEnabled={setSheetSyncEnabled}
+                sheetSpreadsheetId={sheetSpreadsheetId}
+                setSheetSpreadsheetId={setSheetSpreadsheetId}
+                recentSheets={recentSheets}
+                rememberRecentSheet={rememberRecentSheet}
+                sheetStatus={sheetStatus}
                 isRunning={isRunning}
                 runPipeline={runPipeline}
                 logs={logs}
