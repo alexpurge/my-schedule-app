@@ -2169,7 +2169,7 @@ export default function App() {
 
     // Store exported "CSV" (internally) as pipeline input
     setHeaders(exportedHeaders);
-    setRows(sheetSyncReady && sheetAutoClear ? [] : allRows);
+    setRows(allRows);
     setSourceBaseName(`watchdog_export_${new Date().toISOString().slice(0, 10)}`);
 
     setStats((s) => ({
@@ -2180,13 +2180,17 @@ export default function App() {
 
     addLog(`Bulk initial pull export complete: ${allRows.length} row(s).`, 'success');
 
-    await syncStageToSheets({
+    const watchdogSynced = await syncStageToSheets({
       stageKey: 'watchdog',
       headers: exportedHeaders,
       rows: allRows,
     });
 
-    return { exportedHeaders, allRows };
+    if (sheetSyncReady && sheetAutoClear && watchdogSynced) {
+      setRows([]);
+    }
+
+    return { exportedHeaders, allRows, watchdogSynced };
   }, [
     abortWatchdogJob,
     addLog,
@@ -2463,9 +2467,9 @@ export default function App() {
       // -----------------------------
       // 0) WATCHDOG BULK RUN + INTERNAL EXPORT
       // -----------------------------
-      const { allRows, exportedHeaders } = await runWatchdogAndExportRows();
-      let workingRows = allRows;
-      let pipelineHeaders = exportedHeaders;
+    const { allRows, exportedHeaders, watchdogSynced } = await runWatchdogAndExportRows();
+    let workingRows = allRows;
+    let pipelineHeaders = exportedHeaders;
 
       if (stopRef.current) throw new Error('Stopped by user.');
 
@@ -2525,7 +2529,7 @@ export default function App() {
         }
       }
 
-      if (sheetSyncReady && sheetAutoClear) {
+      if (sheetSyncReady && sheetAutoClear && watchdogSynced) {
         workingRows.length = 0;
         setRows([]);
       }
@@ -2556,13 +2560,17 @@ export default function App() {
         dedupRemoved: dupRemoved,
         afterDedup: deduped.length,
       }));
-      setDedupRows(sheetSyncReady && sheetAutoClear ? [] : deduped);
+      setDedupRows(deduped);
 
-      await syncStageToSheets({
+      const dedupSynced = await syncStageToSheets({
         stageKey: 'deduplicated',
         headers: pipelineHeaders,
         rows: deduped,
       });
+
+      if (sheetSyncReady && sheetAutoClear && dedupSynced) {
+        setDedupRows([]);
+      }
 
       addLog(`Deduplicator: removed ${dupRemoved} duplicates (by "${dedupColumn}").`, dupRemoved ? 'warning' : 'success');
 
@@ -2597,9 +2605,9 @@ export default function App() {
         purifierRemoved,
         afterPurify: purified.length,
       }));
-      setPurifiedRows(sheetSyncReady && sheetAutoClear ? [] : purified);
+      setPurifiedRows(purified);
 
-      await syncStageToSheets({
+      const purifiedSynced = await syncStageToSheets({
         stageKey: 'purified',
         headers: pipelineHeaders,
         rows: purified,
@@ -2610,7 +2618,7 @@ export default function App() {
         purifierRemoved ? 'warning' : 'success'
       );
 
-      if (sheetSyncReady && sheetAutoClear) {
+      if (sheetSyncReady && sheetAutoClear && purifiedSynced) {
         deduped.length = 0;
         setDedupRows([]);
       }
@@ -2668,9 +2676,9 @@ export default function App() {
         masterFilterRemoved,
         afterMasterFilter: kept.length,
       }));
-      setFilteredRows(sheetSyncReady && sheetAutoClear ? [] : kept);
+      setFilteredRows(kept);
 
-      await syncStageToSheets({
+      const filterSynced = await syncStageToSheets({
         stageKey: 'master_filter',
         headers: pipelineHeaders,
         rows: kept,
@@ -2681,7 +2689,7 @@ export default function App() {
         kept.length ? 'success' : 'warning'
       );
 
-      if (sheetSyncReady && sheetAutoClear) {
+      if (sheetSyncReady && sheetAutoClear && filterSynced) {
         purified.length = 0;
         setPurifiedRows([]);
       }
@@ -2706,7 +2714,7 @@ export default function App() {
 
       if (!allUrls.length) throw new Error(`No URLs detected in column "${urlColumn}".`);
 
-      if (sheetSyncReady && sheetAutoClear) {
+      if (sheetSyncReady && sheetAutoClear && filterSynced) {
         workingRows.length = 0;
         setFilteredRows([]);
       }
@@ -2932,15 +2940,17 @@ export default function App() {
         ],
       };
 
-      await Promise.all([
+      const finalSyncResults = await Promise.all([
         syncStageToSheets({ stageKey: 'mobiles', headers: allKeys, rows: mobileList }),
         syncStageToSheets({ stageKey: 'landlines', headers: allKeys, rows: landlineList }),
         syncStageToSheets({ stageKey: 'others', headers: allKeys, rows: otherList }),
       ]);
 
-      setFinalWorkbook(sheetSyncReady && sheetAutoClear ? null : finalWorkbookPayload);
+      const finalSynced = finalSyncResults.every(Boolean);
 
-      if (sheetSyncReady && sheetAutoClear) {
+      setFinalWorkbook(sheetSyncReady && sheetAutoClear && finalSynced ? null : finalWorkbookPayload);
+
+      if (sheetSyncReady && sheetAutoClear && finalSynced) {
         mobileList.length = 0;
         landlineList.length = 0;
         otherList.length = 0;
@@ -2991,6 +3001,10 @@ export default function App() {
    * ============================================================
    */
   const downloadFinalSpreadsheet = useCallback(async () => {
+    if (sheetAutoClear) {
+      addLog('Download disabled while Reduce local memory usage is enabled.', 'warning');
+      return;
+    }
     let workbook = finalWorkbook;
 
     if (!workbook && sheetSyncReady) {
@@ -3035,7 +3049,7 @@ export default function App() {
     downloadBlob(blob, filename);
 
     addLog(`Downloaded: ${filename}`, 'success');
-  }, [addLog, fetchStageFromSheets, finalWorkbook, headers, sheetSyncReady, sourceBaseName]);
+  }, [addLog, fetchStageFromSheets, finalWorkbook, headers, sheetAutoClear, sheetSyncReady, sourceBaseName]);
 
   /**
    * ============================================================
@@ -3066,9 +3080,10 @@ export default function App() {
     .join(' ');
 
   const finalWorkbookAvailable =
-    Boolean(finalWorkbook) ||
-    (sheetSyncReady &&
-      (sheetStageAvailability.mobiles || sheetStageAvailability.landlines || sheetStageAvailability.others));
+    !sheetAutoClear &&
+    (Boolean(finalWorkbook) ||
+      (sheetSyncReady &&
+        (sheetStageAvailability.mobiles || sheetStageAvailability.landlines || sheetStageAvailability.others)));
 
   if (!authState.authenticated) {
     return (
@@ -3142,6 +3157,7 @@ export default function App() {
           resetAll={resetAll}
           downloadFinalSpreadsheet={downloadFinalSpreadsheet}
           finalWorkbookAvailable={finalWorkbookAvailable}
+          allowFinalDownload={!sheetAutoClear}
         />
 
         {/* Progress */}
@@ -3243,6 +3259,7 @@ export default function App() {
                 dedupColumn={dedupColumn}
                 filterColumn={filterColumn}
                 finalWorkbookAvailable={finalWorkbookAvailable}
+                allowFinalDownload={!sheetAutoClear}
                 sheetStageAvailability={sheetStageAvailability}
                 downloadFinalSpreadsheet={downloadFinalSpreadsheet}
                 error={error}
