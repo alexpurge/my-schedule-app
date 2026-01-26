@@ -627,12 +627,15 @@ export default function App() {
   const [googleReady, setGoogleReady] = useState(false);
   const [googleButtonReady, setGoogleButtonReady] = useState(false);
   const googleButtonRef = useRef(null);
+  const sheetsTokenClientRef = useRef(null);
   const [authState, setAuthState] = useState({
     loading: true,
     authenticated: false,
     error: null,
   });
   const [authUser, setAuthUser] = useState(null);
+  const [sheetsAccessToken, setSheetsAccessToken] = useState(null);
+  const [sheetsAccessTokenExpiresAt, setSheetsAccessTokenExpiresAt] = useState(0);
   const [welcomePhase, setWelcomePhase] = useState('idle');
   const [welcomeText, setWelcomeText] = useState('');
   const welcomeStartedRef = useRef(false);
@@ -699,6 +702,13 @@ export default function App() {
       }));
     };
     document.body.appendChild(script);
+  }, [authState.authenticated]);
+
+  useEffect(() => {
+    if (!authState.authenticated) {
+      setSheetsAccessToken(null);
+      setSheetsAccessTokenExpiresAt(0);
+    }
   }, [authState.authenticated]);
 
   const handleGoogleCredential = useCallback(async (response) => {
@@ -796,6 +806,49 @@ export default function App() {
     });
     setGoogleReady(true);
   }, [authState.authenticated, googleClientId, googleScriptReady, handleGoogleCredential]);
+
+  useEffect(() => {
+    if (!googleScriptReady || !googleClientId) return;
+    const google = window.google;
+    if (!google?.accounts?.oauth2) return;
+    sheetsTokenClientRef.current = google.accounts.oauth2.initTokenClient({
+      client_id: googleClientId,
+      scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets',
+      callback: () => {},
+    });
+  }, [googleClientId, googleScriptReady]);
+
+  const requestSheetsAccessToken = useCallback((prompt = '') => {
+    return new Promise((resolve, reject) => {
+      const tokenClient = sheetsTokenClientRef.current;
+      if (!tokenClient) {
+        reject(new Error('Google OAuth is not ready for Sheets access.'));
+        return;
+      }
+      tokenClient.callback = (tokenResponse) => {
+        if (tokenResponse?.access_token) {
+          const expiresIn = Number(tokenResponse.expires_in) || 3600;
+          setSheetsAccessToken(tokenResponse.access_token);
+          setSheetsAccessTokenExpiresAt(Date.now() + expiresIn * 1000 - 60000);
+          resolve(tokenResponse.access_token);
+          return;
+        }
+        reject(new Error(tokenResponse?.error || 'Unable to authorize Google Sheets access.'));
+      };
+      tokenClient.requestAccessToken({ prompt });
+    });
+  }, []);
+
+  const ensureSheetsAccessToken = useCallback(
+    async (prompt = 'consent') => {
+      if (sheetsAccessToken && Date.now() < sheetsAccessTokenExpiresAt) {
+        return sheetsAccessToken;
+      }
+      const nextPrompt = sheetsAccessToken ? '' : prompt;
+      return requestSheetsAccessToken(nextPrompt);
+    },
+    [requestSheetsAccessToken, sheetsAccessToken, sheetsAccessTokenExpiresAt]
+  );
 
   const renderGoogleButton = useCallback(() => {
     const container = googleButtonRef.current;
@@ -910,7 +963,12 @@ export default function App() {
       return true;
     }
   });
-  const [sheetStatus, setSheetStatus] = useState({ configured: false, serviceAccountEmail: null });
+  const [sheetStatus, setSheetStatus] = useState({
+    configured: false,
+    mode: 'none',
+    accountEmail: null,
+    serviceAccountEmail: null,
+  });
   const [sheetStageAvailability, setSheetStageAvailability] = useState({
     watchdog: false,
     deduplicated: false,
@@ -922,6 +980,10 @@ export default function App() {
   });
   const sheetSyncReady = sheetSyncEnabled && sheetSpreadsheetId.trim().length > 0;
   const [recentSheets, setRecentSheets] = useState([]);
+  const selectedRecentSheet = useMemo(
+    () => recentSheets.find((sheet) => sheet.id === sheetSpreadsheetId) || null,
+    [recentSheets, sheetSpreadsheetId]
+  );
 
   useEffect(() => {
     try {
@@ -935,33 +997,65 @@ export default function App() {
     }
   }, [sheetAppendMode, sheetAutoClear, sheetSpreadsheetId, sheetSyncEnabled, sheetTabPrefix]);
 
-  const sheetsRequest = useCallback(async ({ path, method = 'POST', body }) => {
-    const res = await fetch(path, {
-      method,
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-
-    const contentType = res.headers.get('content-type') || '';
-    let payload = null;
-    if (contentType.includes('application/json')) {
-      try {
-        payload = await res.json();
-      } catch {
-        payload = null;
+  const sheetsRequest = useCallback(
+    async ({ path, method = 'POST', body, accessToken }) => {
+      const headers = { 'Content-Type': 'application/json' };
+      const token = accessToken || sheetsAccessToken;
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
       }
-    } else {
-      payload = await res.text();
-    }
-    return { ok: res.ok, status: res.status, data: payload };
-  }, []);
+      const res = await fetch(path, {
+        method,
+        credentials: 'include',
+        headers,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+
+      const contentType = res.headers.get('content-type') || '';
+      let payload = null;
+      if (contentType.includes('application/json')) {
+        try {
+          payload = await res.json();
+        } catch {
+          payload = null;
+        }
+      } else {
+        payload = await res.text();
+      }
+      return { ok: res.ok, status: res.status, data: payload };
+    },
+    [sheetsAccessToken]
+  );
 
   const refreshRecentSheets = useCallback(async () => {
-    const res = await sheetsRequest({
+    let accessToken = null;
+    try {
+      accessToken = await ensureSheetsAccessToken('consent');
+    } catch {
+      setRecentSheets([]);
+      return;
+    }
+
+    let res = await sheetsRequest({
       path: '/sheets/recent?limit=8',
       method: 'GET',
+      accessToken,
     });
+
+    if (!res.ok && (res.status === 401 || res.status === 403)) {
+      try {
+        accessToken = await requestSheetsAccessToken('consent');
+        res = await sheetsRequest({
+          path: '/sheets/recent?limit=8',
+          method: 'GET',
+          accessToken,
+        });
+      } catch {
+        setRecentSheets([]);
+        return;
+      }
+    }
+
     if (!res.ok) {
       setRecentSheets([]);
       return;
@@ -977,7 +1071,7 @@ export default function App() {
           webViewLink: file?.webViewLink || null,
         }))
     );
-  }, [sheetsRequest]);
+  }, [ensureSheetsAccessToken, requestSheetsAccessToken, sheetsRequest]);
 
   /**
    * ============================================================
@@ -1018,6 +1112,8 @@ export default function App() {
     if (res.ok) {
       setSheetStatus({
         configured: Boolean(res.data?.configured),
+        mode: res.data?.mode || 'none',
+        accountEmail: res.data?.accountEmail || null,
         serviceAccountEmail: res.data?.serviceAccountEmail || null,
       });
     }
@@ -1034,6 +1130,11 @@ export default function App() {
     }
     refreshRecentSheets();
   }, [refreshRecentSheets, sheetSyncEnabled]);
+
+  useEffect(() => {
+    if (!sheetSyncEnabled) return;
+    refreshSheetStatus();
+  }, [refreshSheetStatus, sheetSyncEnabled, sheetsAccessToken]);
 
   /**
    * ============================================================
@@ -1133,7 +1234,15 @@ export default function App() {
       if (!stageHeaders.length) return false;
 
       const sheetTitle = buildSheetTitle(stageKey);
-      const res = await sheetsRequest({
+      let accessToken = null;
+      try {
+        accessToken = await ensureSheetsAccessToken('consent');
+      } catch {
+        addLog('Google Sheets authorization was cancelled or blocked.', 'error');
+        return false;
+      }
+
+      let res = await sheetsRequest({
         path: '/sheets/sync',
         body: {
           spreadsheetId: sheetSpreadsheetId.trim(),
@@ -1142,7 +1251,28 @@ export default function App() {
           rows: stageRows,
           mode: sheetAppendMode,
         },
+        accessToken,
       });
+
+      if (!res.ok && (res.status === 401 || res.status === 403)) {
+        try {
+          accessToken = await requestSheetsAccessToken('consent');
+          res = await sheetsRequest({
+            path: '/sheets/sync',
+            body: {
+              spreadsheetId: sheetSpreadsheetId.trim(),
+              sheetTitle,
+              headers: stageHeaders,
+              rows: stageRows,
+              mode: sheetAppendMode,
+            },
+            accessToken,
+          });
+        } catch {
+          addLog('Google Sheets authorization expired. Please sign in again.', 'error');
+          return false;
+        }
+      }
 
       if (res.ok) {
         setSheetStageAvailability((prev) => ({ ...prev, [stageKey]: true }));
@@ -1159,6 +1289,8 @@ export default function App() {
     [
       addLog,
       buildSheetTitle,
+      ensureSheetsAccessToken,
+      requestSheetsAccessToken,
       sheetAppendMode,
       sheetSpreadsheetId,
       sheetSyncReady,
@@ -1170,17 +1302,48 @@ export default function App() {
     async (stageKey) => {
       if (!sheetSyncReady) return null;
       const sheetTitle = buildSheetTitle(stageKey);
-      const res = await sheetsRequest({
+      let accessToken = null;
+      try {
+        accessToken = await ensureSheetsAccessToken('consent');
+      } catch {
+        addLog('Google Sheets authorization was cancelled or blocked.', 'error');
+        return null;
+      }
+
+      let res = await sheetsRequest({
         path: '/sheets/read',
         body: { spreadsheetId: sheetSpreadsheetId.trim(), sheetTitle },
+        accessToken,
       });
+
+      if (!res.ok && (res.status === 401 || res.status === 403)) {
+        try {
+          accessToken = await requestSheetsAccessToken('consent');
+          res = await sheetsRequest({
+            path: '/sheets/read',
+            body: { spreadsheetId: sheetSpreadsheetId.trim(), sheetTitle },
+            accessToken,
+          });
+        } catch {
+          addLog('Google Sheets authorization expired. Please sign in again.', 'error');
+          return null;
+        }
+      }
       if (!res.ok) {
         addLog(`Google Sheets read failed for "${sheetTitle}" (${res.status}).`, 'error');
         return null;
       }
       return { headers: res.data?.headers || [], rows: res.data?.rows || [] };
     },
-    [addLog, buildSheetTitle, sheetSpreadsheetId, sheetSyncReady, sheetsRequest]
+    [
+      addLog,
+      buildSheetTitle,
+      ensureSheetsAccessToken,
+      requestSheetsAccessToken,
+      sheetSpreadsheetId,
+      sheetSyncReady,
+      sheetsRequest,
+    ]
   );
 
   /**
@@ -2934,6 +3097,7 @@ export default function App() {
                 sheetSpreadsheetId={sheetSpreadsheetId}
                 setSheetSpreadsheetId={setSheetSpreadsheetId}
                 recentSheets={recentSheets}
+                selectedRecentSheet={selectedRecentSheet}
                 sheetStatus={sheetStatus}
                 isRunning={isRunning}
                 runPipeline={runPipeline}
