@@ -813,7 +813,7 @@ export default function App() {
     if (!google?.accounts?.oauth2) return;
     sheetsTokenClientRef.current = google.accounts.oauth2.initTokenClient({
       client_id: googleClientId,
-      scope: 'https://www.googleapis.com/auth/drive.readonly https://www.googleapis.com/auth/spreadsheets',
+      scope: 'https://www.googleapis.com/auth/spreadsheets',
       callback: () => {},
     });
   }, [googleClientId, googleScriptReady]);
@@ -1056,7 +1056,7 @@ export default function App() {
       }
     }
 
-    if (!res.ok) {
+    if (!res.ok || res.data?.disabled) {
       setRecentSheets([]);
       return;
     }

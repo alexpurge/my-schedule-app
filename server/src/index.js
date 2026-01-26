@@ -40,7 +40,7 @@ app.get("/health", (req, res) => {
 });
 
 const isEmailAllowed = (email) => {
-  if (!allowedEmails.length) return false;
+  if (!allowedEmails.length) return true;
   const normalized = String(email || "").toLowerCase();
   return allowedEmails.some((entry) => {
     if (entry.startsWith("@")) {
@@ -155,7 +155,6 @@ const getGoogleAuth = (scopes) => {
 };
 
 const getSheetsAuth = () => getGoogleAuth(["https://www.googleapis.com/auth/spreadsheets"]);
-const getDriveAuth = () => getGoogleAuth(["https://www.googleapis.com/auth/drive.readonly"]);
 
 const getAccessTokenFromRequest = (req) => {
   const header = req.headers?.authorization || "";
@@ -196,40 +195,6 @@ const requestSheetsApi = async ({ spreadsheetId, path, method = "GET", query, bo
       "Content-Type": "application/json",
     },
     body: body ? JSON.stringify(body) : undefined,
-  });
-  const contentType = res.headers.get("content-type") || "";
-  let payload = null;
-  if (contentType.includes("application/json")) {
-    payload = await res.json().catch(() => null);
-  } else {
-    payload = await res.text().catch(() => null);
-  }
-  return { ok: res.ok, status: res.status, data: payload };
-};
-
-const buildDriveUrl = (path, query) => {
-  const url = new URL(`https://www.googleapis.com/drive/v3${path}`);
-  if (query && typeof query === "object") {
-    Object.entries(query).forEach(([key, value]) => {
-      if (value === undefined || value === null || value === "") return;
-      url.searchParams.set(key, String(value));
-    });
-  }
-  return url;
-};
-
-const requestDriveApi = async ({ path, method = "GET", query, accessToken }) => {
-  const headers = await getAuthHeaders(accessToken, getDriveAuth);
-  if (!headers) {
-    return { ok: false, status: 500, data: { error: "Drive API is not configured for this server or user." } };
-  }
-  const url = buildDriveUrl(path, query);
-  const res = await fetch(url, {
-    method,
-    headers: {
-      ...headers,
-      "Content-Type": "application/json",
-    },
   });
   const contentType = res.headers.get("content-type") || "";
   let payload = null;
@@ -287,45 +252,12 @@ app.get("/sheets/status", (req, res) => {
   });
 });
 
-app.get("/sheets/recent", async (req, res) => {
-  const rawLimit = Number(req.query.limit || 10);
-  const limit = Number.isFinite(rawLimit) ? Math.min(25, Math.max(1, rawLimit)) : 10;
-  try {
-    const accessToken = getAccessTokenFromRequest(req);
-    const recentRes = await requestDriveApi({
-      path: "/files",
-      query: {
-        q: "mimeType='application/vnd.google-apps.spreadsheet' and trashed=false",
-        orderBy: "modifiedTime desc",
-        includeItemsFromAllDrives: true,
-        supportsAllDrives: true,
-        corpora: "allDrives",
-        pageSize: limit,
-        fields: "files(id,name,modifiedTime,webViewLink)",
-      },
-      accessToken,
-    });
-
-    if (!recentRes.ok) {
-      res
-        .status(recentRes.status)
-        .json(recentRes.data || { error: "Unable to load recent spreadsheets." });
-      return;
-    }
-
-    const files = Array.isArray(recentRes.data?.files) ? recentRes.data.files : [];
-    res.json({
-      files: files.map((file) => ({
-        id: file?.id || "",
-        name: file?.name || "",
-        modifiedTime: file?.modifiedTime || null,
-        webViewLink: file?.webViewLink || null,
-      })),
-    });
-  } catch (error) {
-    console.error("Recent sheets fetch failed:", error);
-    res.status(500).json({ error: "Recent sheets fetch failed." });
-  }
+app.get("/sheets/recent", (req, res) => {
+  res.json({
+    files: [],
+    disabled: true,
+    message: "Recent sheets lookup requires Google Drive API access and is disabled.",
+  });
 });
 
 app.post("/sheets/sync", async (req, res) => {
