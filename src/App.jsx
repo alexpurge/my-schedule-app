@@ -2371,9 +2371,6 @@ export default function App() {
           </div>
         )}
         <div className="authLoginStack">
-          <div className="authLoginCopy">
-            Sign in to keep your schedule in sync across devices.
-          </div>
           <div
             className="authSplineLoginHitbox"
             role="button"
