@@ -2386,30 +2386,49 @@ export default function App() {
     [addLog, apiToken, customProxy, memory]
   );
 
+  const normalizeUrl = useCallback((raw) => {
+    const trimmed = safeToString(raw).trim();
+    if (!trimmed) return '';
+
+    const looksLikeUrl = /^https?:\/\//i.test(trimmed) || /facebook\.com/i.test(trimmed);
+    if (!looksLikeUrl) return '';
+
+    if (!/^https?:\/\//i.test(trimmed) && /facebook\.com/i.test(trimmed)) {
+      return `https://${trimmed.replace(/^\/+/, '')}`;
+    }
+
+    return trimmed;
+  }, []);
+
+  const extractUrlsFromRow = useCallback(
+    (row) => {
+      const raw = safeToString(row[urlColumn]).trim();
+      if (!raw) return [];
+
+      const parts = raw
+        .split(/[\s,]+/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      const urls = [];
+      for (const p of parts) {
+        const normalized = normalizeUrl(p);
+        if (normalized) urls.push(normalized);
+      }
+
+      return urls;
+    },
+    [normalizeUrl, urlColumn]
+  );
+
   const extractUrls = useCallback(
     (dataRows) => {
       const out = [];
       const seen = new Set();
 
       for (const row of dataRows) {
-        const raw = safeToString(row[urlColumn]).trim();
-        if (!raw) continue;
-
-        const parts = raw
-          .split(/[\s,]+/)
-          .map((p) => p.trim())
-          .filter(Boolean);
-
-        for (const p of parts) {
-          const looksLikeUrl = /^https?:\/\//i.test(p) || /facebook\.com/i.test(p);
-          if (!looksLikeUrl) continue;
-
-          let normalized = p;
-          if (!/^https?:\/\//i.test(normalized) && /facebook\.com/i.test(normalized)) {
-            normalized = normalized.replace(/^\/+/, '');
-            normalized = `https://${normalized}`;
-          }
-
+        const urls = extractUrlsFromRow(row);
+        for (const normalized of urls) {
           if (!seen.has(normalized)) {
             seen.add(normalized);
             out.push(normalized);
@@ -2419,7 +2438,82 @@ export default function App() {
 
       return out;
     },
-    [urlColumn]
+    [extractUrlsFromRow]
+  );
+
+  const getKeywordColumns = useCallback((dataRows) => {
+    let maxIndex = 0;
+
+    for (const row of dataRows) {
+      for (const key of Object.keys(row || {})) {
+        if (key === 'keyword') {
+          maxIndex = Math.max(maxIndex, 1);
+          continue;
+        }
+
+        if (key.startsWith('keyword_')) {
+          const suffix = Number(key.replace('keyword_', ''));
+          if (!Number.isNaN(suffix)) maxIndex = Math.max(maxIndex, suffix);
+        }
+      }
+    }
+
+    if (maxIndex === 0) return [];
+
+    return Array.from({ length: maxIndex }, (_, idx) => (idx === 0 ? 'keyword' : `keyword_${idx + 1}`));
+  }, []);
+
+  const extractKeywordsFromRow = useCallback((row, keywordColumns) => {
+    const keywords = [];
+    for (const key of keywordColumns) {
+      const value = safeToString(row?.[key]).trim();
+      if (value) keywords.push(value);
+    }
+    return keywords;
+  }, []);
+
+  const buildUrlKeywordMap = useCallback(
+    (dataRows, keywordColumns) => {
+      const map = new Map();
+
+      for (const row of dataRows) {
+        const urls = extractUrlsFromRow(row);
+        if (!urls.length) continue;
+
+        const keywordValues = extractKeywordsFromRow(row, keywordColumns);
+        for (const url of urls) {
+          if (!map.has(url)) map.set(url, new Set());
+          const keywordSet = map.get(url);
+          for (const keyword of keywordValues) keywordSet.add(keyword);
+        }
+      }
+
+      return map;
+    },
+    [extractKeywordsFromRow, extractUrlsFromRow]
+  );
+
+  const resolveItemUrl = useCallback(
+    (item, urlKeywordMap) => {
+      if (!item) return '';
+      const keys = Object.keys(item);
+
+      for (const key of keys) {
+        if (!/url/i.test(key)) continue;
+        const candidate = normalizeUrl(item[key]);
+        if (candidate && urlKeywordMap.has(candidate)) return candidate;
+      }
+
+      for (const value of Object.values(item)) {
+        if (typeof value !== 'string') continue;
+        if (!/facebook\.com/i.test(value)) continue;
+        const candidate = normalizeUrl(value);
+        if (candidate && urlKeywordMap.has(candidate)) return candidate;
+      }
+
+      return '';
+    },
+    [normalizeUrl]
   );
 
   /**
@@ -2658,7 +2752,9 @@ export default function App() {
       setStatus('Running Apify batches...');
       setProgress(55);
 
-      const allUrls = extractUrls(kept);
+      const keywordColumns = getKeywordColumns(kept);
+      const urlKeywordMap = buildUrlKeywordMap(kept, keywordColumns);
+      const allUrls = urlKeywordMap.size ? Array.from(urlKeywordMap.keys()) : extractUrls(kept);
       setStats((s) => ({ ...s, urlsForApify: allUrls.length }));
 
       if (!allUrls.length) throw new Error(`No URLs detected in column "${urlColumn}".`);
@@ -2672,10 +2768,10 @@ export default function App() {
       setBatchProgress({ total: batches.length, completed: 0, active: 0 });
       setStats((s) => ({ ...s, batchesTotal: batches.length }));
 
-      addLog(`Apify: splitting into ${batches.length} batch(es) (max 10 URLs/batch).`, 'info');
-      addLog(`Apify: queue configured for max 10 concurrent runs.`, 'info');
+      const maxConcurrent = Math.max(1, watchdogMaxConcurrency);
 
-      const maxConcurrent = 10;
+      addLog(`Apify: splitting into ${batches.length} batch(es) (max 10 URLs/batch).`, 'info');
+      addLog(`Apify: queue configured for max ${maxConcurrent} concurrent runs.`, 'info');
       const results = [];
       const executing = [];
 
@@ -2737,7 +2833,23 @@ export default function App() {
         const res = await fetch(url);
         if (res.ok) {
           const items = await res.json();
-          if (Array.isArray(items) && items.length) allItems = allItems.concat(items);
+          if (Array.isArray(items) && items.length) {
+            const enriched = items.map((item) => {
+              const matchedUrl = resolveItemUrl(item, urlKeywordMap);
+              const keywords = matchedUrl ? Array.from(urlKeywordMap.get(matchedUrl) || []) : [];
+              const enrichedItem = { ...item };
+
+              if (keywordColumns.length > 0) {
+                keywordColumns.forEach((col, idx) => {
+                  enrichedItem[col] = keywords[idx] || '';
+                });
+              }
+
+              return enrichedItem;
+            });
+
+            allItems = allItems.concat(enriched);
+          }
           addLog(`Dataset ${i + 1}/${validIds.length}: ${Array.isArray(items) ? items.length : 0} item(s).`, 'info');
         } else {
           addLog(`Failed to fetch dataset ${dsId} (${res.status}).`, 'error');
@@ -2767,6 +2879,15 @@ export default function App() {
           if (!keySet.has(k)) {
             keySet.add(k);
             allKeys.push(k);
+          }
+        }
+      }
+
+      if (keywordColumns.length > 0) {
+        for (const col of keywordColumns) {
+          if (!keySet.has(col)) {
+            keySet.add(col);
+            allKeys.push(col);
           }
         }
       }
@@ -2874,10 +2995,13 @@ export default function App() {
     addLog,
     allowSet,
     apiToken,
+    buildUrlKeywordMap,
     dedupColumn,
     extractUrls,
     filterColumn,
+    getKeywordColumns,
     matchMode,
+    resolveItemUrl,
     runSingleBatch,
     runWatchdogAndExportRows,
     sourceBaseName,
@@ -2885,6 +3009,7 @@ export default function App() {
     setDedupRows,
     setFilteredRows,
     setPurifiedRows,
+    watchdogMaxConcurrency,
   ]);
 
   /**
