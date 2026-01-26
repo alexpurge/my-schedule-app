@@ -268,6 +268,20 @@ input:-webkit-autofill:active{
   letter-spacing: 0.08em;
 }
 
+.authGoogleButtonFrame{
+  width: min(320px, 90vw);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+}
+
+.authGoogleButtonGsi{
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
 .authStatus{
   color: var(--text-muted);
   font-size: 13px;

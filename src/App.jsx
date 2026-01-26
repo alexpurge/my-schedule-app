@@ -626,7 +626,6 @@ export default function App() {
   const [googleScriptReady, setGoogleScriptReady] = useState(false);
   const [googleReady, setGoogleReady] = useState(false);
   const sheetsTokenClientRef = useRef(null);
-  const [sheetsTokenClientReady, setSheetsTokenClientReady] = useState(false);
   const [authState, setAuthState] = useState({
     loading: true,
     authenticated: false,
@@ -638,6 +637,7 @@ export default function App() {
   const [welcomePhase, setWelcomePhase] = useState('idle');
   const [welcomeText, setWelcomeText] = useState('');
   const welcomeStartedRef = useRef(false);
+  const googleButtonRef = useRef(null);
   const WELCOME_HOLD_MS = 500;
 
   useEffect(() => {
@@ -776,7 +776,6 @@ export default function App() {
       scope: googleSheetsScopes.join(' '),
       callback: () => {},
     });
-    setSheetsTokenClientReady(true);
   }, [googleClientId, googleScriptReady, googleSheetsScopes]);
 
   const requestSheetsAccessToken = useCallback((prompt = '') => {
@@ -871,48 +870,35 @@ export default function App() {
     google.accounts.id.initialize({
       client_id: googleClientId,
       callback: handleGoogleCredential,
+      ux_mode: 'popup',
+      context: 'signin',
+      auto_select: false,
+      cancel_on_tap_outside: false,
     });
     setGoogleReady(true);
   }, [authState.authenticated, googleClientId, googleScriptReady, handleGoogleCredential]);
 
-  const handleLoginClick = useCallback(() => {
-    if (!googleReady) {
-      setAuthState((prev) => ({
-        ...prev,
-        loading: false,
-        error: 'Google Sign In is still loading. Please wait a moment and try again.',
-      }));
-      return;
-    }
-    if (!sheetsTokenClientReady) {
-      setAuthState((prev) => ({
-        ...prev,
-        loading: false,
-        error: 'Google Sheets access is still loading. Please wait a moment and try again.',
-      }));
-      return;
-    }
-    const google = window.google;
-    if (!google?.accounts?.id) {
-      setAuthState((prev) => ({
-        ...prev,
-        loading: false,
-        error: 'Google Sign In is unavailable right now.',
-      }));
-      return;
-    }
-    setAuthState((prev) => ({ ...prev, loading: true, error: null }));
+  const handleGoogleButtonClick = useCallback(() => {
     loginTokenRequestRef.current = true;
-    google.accounts.id.prompt((notification) => {
-      if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
-        setAuthState((prev) => ({
-          ...prev,
-          loading: false,
-          error: 'Google Sign In was closed or blocked. Please try again.',
-        }));
-      }
+    setAuthState((prev) => ({ ...prev, error: null }));
+  }, []);
+
+  useEffect(() => {
+    if (!googleReady || authState.authenticated) return;
+    if (!googleButtonRef.current) return;
+    const google = window.google;
+    if (!google?.accounts?.id) return;
+    googleButtonRef.current.innerHTML = '';
+    google.accounts.id.renderButton(googleButtonRef.current, {
+      type: 'standard',
+      theme: 'outline',
+      size: 'large',
+      text: 'signin_with',
+      shape: 'rectangular',
+      width: 320,
+      click_listener: handleGoogleButtonClick,
     });
-  }, [googleReady, sheetsTokenClientReady]);
+  }, [authState.authenticated, googleReady, handleGoogleButtonClick]);
 
   /**
    * ============================================================
@@ -3103,41 +3089,12 @@ export default function App() {
           </div>
         )}
         <div className="authLoginStack">
-          <button
-            className="authGoogleButton"
-            type="button"
-            onClick={handleLoginClick}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') {
-                event.preventDefault();
-                handleLoginClick();
-              }
-            }}
-            aria-label="Sign in with Google"
-            disabled={authState.loading}
-          >
-            <span className="authGoogleButtonIcon" aria-hidden="true">
-              <svg viewBox="0 0 48 48" focusable="false" aria-hidden="true">
-                <path
-                  fill="#4285F4"
-                  d="M24 9.5c3.23 0 6.06 1.12 8.32 2.97l6.2-6.2C34.7 2.52 29.7 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.21 5.6C11.6 13.01 17.35 9.5 24 9.5z"
-                />
-                <path
-                  fill="#34A853"
-                  d="M46.5 24.5c0-1.67-.15-2.9-.48-4.18H24v7.92h12.76c-.52 2.92-2.16 5.3-4.6 6.98l7.06 5.47c4.12-3.8 6.28-9.4 6.28-16.19z"
-                />
-                <path
-                  fill="#FBBC05"
-                  d="M9.77 28.82a14.5 14.5 0 0 1 0-9.64l-7.2-5.6C.92 16.95 0 20.38 0 24c0 3.62.92 7.05 2.57 10.42l7.2-5.6z"
-                />
-                <path
-                  fill="#EA4335"
-                  d="M24 48c5.7 0 10.48-1.88 13.98-5.11l-7.06-5.47c-1.94 1.3-4.43 2.07-6.92 2.07-6.65 0-12.4-3.51-14.23-8.32l-7.21 5.6C6.5 42.62 14.62 48 24 48z"
-                />
-              </svg>
-            </span>
-            <span className="authGoogleButtonLabel">Sign in with Google</span>
-          </button>
+          <div className="authGoogleButtonFrame" aria-live="polite">
+            {!googleReady && (
+              <div className="authGoogleButtonMeta">Loading Google Sign In…</div>
+            )}
+            <div ref={googleButtonRef} className="authGoogleButtonGsi" />
+          </div>
         </div>
       </div>
     );
