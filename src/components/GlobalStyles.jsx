@@ -788,6 +788,65 @@ input:-webkit-autofill:active{
 }
 .smallNote b{ color: var(--text-main); }
 
+.diagList{
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.diagRow{
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 16px;
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.diagMeta{
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.diagTitle{
+  font-weight: 700;
+  color: var(--text-main);
+}
+.diagDetail{
+  color: var(--text-muted);
+}
+.diagStatus{
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  font-weight: 800;
+  color: var(--text-subtle);
+}
+.diagRow.diag-success .diagStatus{
+  color: #34d399;
+}
+.diagRow.diag-error .diagStatus{
+  color: #f87171;
+}
+.diagRow.diag-warning .diagStatus{
+  color: #fbbf24;
+}
+.diagRow.diag-in-progress .diagStatus{
+  color: var(--color-primary);
+}
+.diagLink{
+  align-self: center;
+  color: var(--color-primary);
+  text-decoration: none;
+  font-weight: 700;
+  font-size: 11px;
+}
+.diagLink:hover{
+  text-decoration: underline;
+}
+
 .tiles{
   display:grid;
   grid-template-columns: repeat(3, minmax(0,1fr));

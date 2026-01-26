@@ -59,6 +59,10 @@ const SettingsPanel = ({
   setSheetAutoClear,
   sheetStatus,
   refreshSheetStatus,
+  onConnectSheets,
+  sheetDiagnostics,
+  sheetDiagnosticsRunning,
+  recentSheets,
 }) => (
   <div className="grid">
     <div className="leftCol" style={{ gridColumn: 'span 12' }}>
@@ -213,6 +217,61 @@ const SettingsPanel = ({
           >
             Refresh Sheets Status
           </button>
+
+          <button
+            className="btn"
+            type="button"
+            onClick={onConnectSheets}
+            disabled={isRunning || sheetDiagnosticsRunning}
+            style={{ marginTop: 12 }}
+          >
+            {sheetDiagnosticsRunning ? 'Connecting…' : 'Connect to Sheets'}
+          </button>
+
+          <div className="smallNote" style={{ marginTop: 12 }}>
+            <b>Diagnostics:</b> Temporary step-by-step readout to show where Sheets access is getting stuck.
+          </div>
+
+          {sheetDiagnostics?.length > 0 && (
+            <div className="diagList" style={{ marginTop: 12 }}>
+              {sheetDiagnostics.map((step) => (
+                <div key={step.key} className={`diagRow diag-${step.status || 'pending'}`}>
+                  <div className="diagMeta">
+                    <div className="diagTitle">{step.label}</div>
+                    {step.detail && <div className="diagDetail">{step.detail}</div>}
+                  </div>
+                  <div className="diagStatus">{step.status || 'pending'}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {recentSheets?.length > 0 && (
+            <div className="diagList" style={{ marginTop: 12 }}>
+              <div className="diagRow diag-success">
+                <div className="diagMeta">
+                  <div className="diagTitle">Recent Sheets</div>
+                  <div className="diagDetail">Select one of these IDs in the dashboard Sheets panel.</div>
+                </div>
+                <div className="diagStatus">{recentSheets.length}</div>
+              </div>
+              {recentSheets.map((sheet) => (
+                <div key={sheet.id} className="diagRow diag-pending">
+                  <div className="diagMeta">
+                    <div className="diagTitle">{sheet.name || 'Untitled Sheet'}</div>
+                    <div className="diagDetail mono">{sheet.id}</div>
+                  </div>
+                  {sheet.webViewLink ? (
+                    <a className="diagLink" href={sheet.webViewLink} target="_blank" rel="noreferrer">
+                      Open
+                    </a>
+                  ) : (
+                    <div className="diagStatus">Saved</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
           {sheetStatus?.mode === 'service_account' && (
             <div className="smallNote" style={{ marginTop: 12 }}>

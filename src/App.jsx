@@ -969,6 +969,8 @@ export default function App() {
     accountEmail: null,
     serviceAccountEmail: null,
   });
+  const [sheetDiagnostics, setSheetDiagnostics] = useState([]);
+  const [sheetDiagnosticsRunning, setSheetDiagnosticsRunning] = useState(false);
   const [sheetStageAvailability, setSheetStageAvailability] = useState({
     watchdog: false,
     deduplicated: false,
@@ -1072,6 +1074,138 @@ export default function App() {
         }))
     );
   }, [ensureSheetsAccessToken, requestSheetsAccessToken, sheetsRequest]);
+
+  const SHEETS_DIAGNOSTIC_STEPS = useMemo(
+    () => [
+      { key: 'oauth', label: 'Load Google OAuth client' },
+      { key: 'token', label: 'Authorize Sheets access' },
+      { key: 'status', label: 'Check Sheets status' },
+      { key: 'recent', label: 'Fetch recent Sheets' },
+    ],
+    []
+  );
+
+  const updateSheetDiagnostic = useCallback((key, updates) => {
+    setSheetDiagnostics((prev) => prev.map((step) => (step.key === key ? { ...step, ...updates } : step)));
+  }, []);
+
+  const runSheetDiagnostics = useCallback(async () => {
+    if (sheetDiagnosticsRunning) return;
+    setSheetDiagnosticsRunning(true);
+    setSheetDiagnostics(
+      SHEETS_DIAGNOSTIC_STEPS.map((step) => ({
+        ...step,
+        status: 'pending',
+        detail: '',
+      }))
+    );
+
+    try {
+      updateSheetDiagnostic('oauth', { status: 'in-progress', detail: 'Checking Google OAuth readiness.' });
+      if (!googleScriptReady || !window.google?.accounts?.oauth2) {
+        updateSheetDiagnostic('oauth', {
+          status: 'error',
+          detail: 'Google OAuth client is still loading. Please try again shortly.',
+        });
+        return;
+      }
+      updateSheetDiagnostic('oauth', { status: 'success', detail: 'OAuth client is ready.' });
+
+      updateSheetDiagnostic('token', { status: 'in-progress', detail: 'Requesting Sheets access token.' });
+      let accessToken = null;
+      try {
+        accessToken = await ensureSheetsAccessToken('consent');
+        updateSheetDiagnostic('token', { status: 'success', detail: 'Access token granted.' });
+      } catch (error) {
+        updateSheetDiagnostic('token', {
+          status: 'error',
+          detail: error instanceof Error ? error.message : 'Authorization failed.',
+        });
+        return;
+      }
+
+      updateSheetDiagnostic('status', { status: 'in-progress', detail: 'Checking Sheets connection status.' });
+      const statusRes = await sheetsRequest({ path: '/sheets/status', method: 'GET', accessToken });
+      if (!statusRes.ok) {
+        updateSheetDiagnostic('status', {
+          status: 'error',
+          detail: statusRes.data?.error || `Status check failed (${statusRes.status}).`,
+        });
+        return;
+      }
+      setSheetStatus({
+        configured: Boolean(statusRes.data?.configured),
+        mode: statusRes.data?.mode || 'none',
+        accountEmail: statusRes.data?.accountEmail || null,
+        serviceAccountEmail: statusRes.data?.serviceAccountEmail || null,
+      });
+      updateSheetDiagnostic('status', {
+        status: 'success',
+        detail: statusRes.data?.configured
+          ? `Connected (${statusRes.data?.mode === 'user' ? 'user' : 'service account'}).`
+          : 'Sheets API not configured on the server yet.',
+      });
+
+      updateSheetDiagnostic('recent', { status: 'in-progress', detail: 'Fetching recent Sheets.' });
+      let recentRes = await sheetsRequest({ path: '/sheets/recent?limit=8', method: 'GET', accessToken });
+      if (!recentRes.ok && (recentRes.status === 401 || recentRes.status === 403)) {
+        try {
+          accessToken = await requestSheetsAccessToken('consent');
+          recentRes = await sheetsRequest({ path: '/sheets/recent?limit=8', method: 'GET', accessToken });
+        } catch (error) {
+          updateSheetDiagnostic('recent', {
+            status: 'error',
+            detail: error instanceof Error ? error.message : 'Unable to refresh Sheets access.',
+          });
+          return;
+        }
+      }
+
+      if (!recentRes.ok) {
+        updateSheetDiagnostic('recent', {
+          status: 'error',
+          detail: recentRes.data?.error || `Recent Sheets fetch failed (${recentRes.status}).`,
+        });
+        return;
+      }
+
+      if (recentRes.data?.disabled) {
+        setRecentSheets([]);
+        updateSheetDiagnostic('recent', {
+          status: 'warning',
+          detail: recentRes.data?.message || 'Recent Sheets lookup is disabled.',
+        });
+        return;
+      }
+
+      const files = Array.isArray(recentRes.data?.files) ? recentRes.data.files : [];
+      setRecentSheets(
+        files
+          .filter((file) => typeof file?.id === 'string' && file.id.length > 0)
+          .map((file) => ({
+            id: file.id,
+            name: typeof file?.name === 'string' ? file.name : '',
+            modifiedTime: file?.modifiedTime || null,
+            webViewLink: file?.webViewLink || null,
+          }))
+      );
+
+      updateSheetDiagnostic('recent', {
+        status: 'success',
+        detail: files.length ? `Loaded ${files.length} recent sheet(s).` : 'No recent Sheets found yet.',
+      });
+    } finally {
+      setSheetDiagnosticsRunning(false);
+    }
+  }, [
+    SHEETS_DIAGNOSTIC_STEPS,
+    ensureSheetsAccessToken,
+    googleScriptReady,
+    requestSheetsAccessToken,
+    sheetDiagnosticsRunning,
+    sheetsRequest,
+    updateSheetDiagnostic,
+  ]);
 
   /**
    * ============================================================
@@ -3063,6 +3197,10 @@ export default function App() {
                 setSheetAutoClear={setSheetAutoClear}
                 sheetStatus={sheetStatus}
                 refreshSheetStatus={refreshSheetStatus}
+                onConnectSheets={runSheetDiagnostics}
+                sheetDiagnostics={sheetDiagnostics}
+                sheetDiagnosticsRunning={sheetDiagnosticsRunning}
+                recentSheets={recentSheets}
               />
             )}
 
