@@ -639,6 +639,7 @@ export default function App() {
   const [welcomeText, setWelcomeText] = useState('');
   const welcomeStartedRef = useRef(false);
   const googleButtonRef = useRef(null);
+  const googleInitRetryRef = useRef(0);
   const WELCOME_HOLD_MS = 500;
 
   useEffect(() => {
@@ -684,9 +685,26 @@ export default function App() {
 
   useEffect(() => {
     if (authState.authenticated) return;
-    if (document.getElementById('google-identity-script')) {
-      setGoogleScriptReady(true);
-      return;
+    const existingScript = document.getElementById('google-identity-script');
+    if (existingScript) {
+      if (window.google?.accounts?.id) {
+        setGoogleScriptReady(true);
+        return;
+      }
+      const handleLoad = () => setGoogleScriptReady(true);
+      const handleError = () => {
+        setAuthState((prev) => ({
+          ...prev,
+          loading: false,
+          error: 'Failed to load Google Sign In.',
+        }));
+      };
+      existingScript.addEventListener('load', handleLoad, { once: true });
+      existingScript.addEventListener('error', handleError, { once: true });
+      return () => {
+        existingScript.removeEventListener('load', handleLoad);
+        existingScript.removeEventListener('error', handleError);
+      };
     }
     const script = document.createElement('script');
     script.id = 'google-identity-script';
@@ -866,17 +884,33 @@ export default function App() {
       }));
       return;
     }
-    const google = window.google;
-    if (!google?.accounts?.id) return;
-    google.accounts.id.initialize({
-      client_id: googleClientId,
-      callback: handleGoogleCredential,
-      ux_mode: 'popup',
-      context: 'signin',
-      auto_select: false,
-      cancel_on_tap_outside: false,
-    });
-    setGoogleReady(true);
+    googleInitRetryRef.current = 0;
+    let isActive = true;
+    const tryInitialize = () => {
+      const google = window.google;
+      if (!google?.accounts?.id) {
+        if (googleInitRetryRef.current < 5) {
+          googleInitRetryRef.current += 1;
+          setTimeout(tryInitialize, 300);
+        }
+        return;
+      }
+      google.accounts.id.initialize({
+        client_id: googleClientId,
+        callback: handleGoogleCredential,
+        ux_mode: 'popup',
+        context: 'signin',
+        auto_select: false,
+        cancel_on_tap_outside: false,
+      });
+      if (isActive) {
+        setGoogleReady(true);
+      }
+    };
+    tryInitialize();
+    return () => {
+      isActive = false;
+    };
   }, [authState.authenticated, googleClientId, googleScriptReady, handleGoogleCredential]);
 
   const handleGoogleButtonClick = useCallback(() => {

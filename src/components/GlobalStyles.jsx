@@ -844,9 +844,12 @@ transform: scale(1.5);
   transform: translateY(-90%, -10%) scale(1.1);
   transform-origin: center;
   pointer-events: auto;
-  opacity: 1;
+  opacity: 0;
   transition: opacity 0.6s ease;
   will-change: opacity;
+}
+.dashboardSplinePanel[data-loaded="true"] iframe{
+  opacity: 1;
 }
 
 @media (min-width: 1024px){
