@@ -1,5 +1,5 @@
 import React from 'react';
-import { Activity, PauseCircle, Sparkles } from 'lucide-react';
+import { Activity, PauseCircle } from 'lucide-react';
 
 const STAGE_LABELS = {
   idle: 'Idle',
@@ -69,15 +69,6 @@ const DashboardOverview = ({ isRunning, stage, stats }) => {
           allow={isRunning ? 'autoplay; fullscreen' : 'fullscreen'}
           referrerPolicy="no-referrer"
         />
-        {!isRunning && (
-          <div className="dashboardSplinePlaceholder" aria-hidden="true">
-            <div className="dashboardSplineBadge">
-              <Sparkles size={18} />
-              <span>Paused</span>
-            </div>
-            <div className="dashboardSplineHint">Spline animation is paused while the system is idle.</div>
-          </div>
-        )}
       </section>
     </div>
   );

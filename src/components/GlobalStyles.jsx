@@ -832,7 +832,7 @@ transform: scale(1.5);
   min-height: 600px;
 }
 .dashboardSplinePanel[data-running="false"] iframe{
-  filter: grayscale(0.35) brightness(0.9);
+  opacity: 0;
 }
 .dashboardSplinePanel iframe{
   width: 100%;
@@ -842,34 +842,9 @@ transform: scale(1.5);
   transform: translateY(10%) scale(1.1);
   transform-origin: center;
   pointer-events: none;
-}
-.dashboardSplinePlaceholder{
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  background: radial-gradient(circle at top, rgba(249,115,22,.08), transparent 65%),
-    linear-gradient(135deg, rgba(15,23,42,.12), rgba(15,23,42,.2));
-  color: var(--text-muted);
-  text-align: center;
-  padding: 24px;
-}
-.dashboardSplineBadge{
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 16px;
-  border-radius: 999px;
-  border: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
-  background: color-mix(in srgb, var(--bg-surface) 80%, transparent);
-  font-weight: 600;
-}
-.dashboardSplineHint{
-  font-size: 13px;
-  max-width: 280px;
+  opacity: 1;
+  transition: opacity 0.6s ease;
+  will-change: opacity;
 }
 
 @media (min-width: 1024px){

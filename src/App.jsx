@@ -907,6 +907,14 @@ export default function App() {
    * ============================================================
    */
   const [activeTab, setActiveTab] = useState('dashboard'); // dashboard | filtration | settings
+  const workspaceRef = useRef(null);
+
+  useEffect(() => {
+    if (activeTab !== 'dashboard') return;
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    workspace.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [activeTab]);
 
   /**
    * ============================================================
@@ -3171,7 +3179,10 @@ export default function App() {
         />
 
         {/* Workspace */}
-        <main className={`workspace ${activeTab === 'dashboard' ? 'workspace--static' : ''}`}>
+        <main
+          className={`workspace ${activeTab === 'dashboard' ? 'workspace--static' : ''}`}
+          ref={workspaceRef}
+        >
           <div className="container">
             {/* SETTINGS TAB */}
             {activeTab === 'settings' && (
