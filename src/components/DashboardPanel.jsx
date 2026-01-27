@@ -32,10 +32,7 @@ const DashboardPanel = ({
   stats,
   filteredOutTotal,
   keywordCount,
-  downloadCsvSnapshot,
-  rows,
-  dedupRows,
-  purifiedRows,
+  downloadMasterCsv,
   filteredRows,
   dedupColumn,
   filterColumn,
@@ -47,12 +44,7 @@ const DashboardPanel = ({
   watchdogJobs,
   abortWatchdogJob,
 }) => {
-  const stageReady = {
-    watchdog: rows.length > 0,
-    deduplicated: dedupRows.length > 0,
-    purified: purifiedRows.length > 0,
-    master_filter: filteredRows.length > 0,
-  };
+  const masterReady = filteredRows.length > 0;
 
   return (
     <div className="grid">
@@ -330,17 +322,6 @@ const DashboardPanel = ({
                   {stats.watchdogSucceeded} ok / {stats.watchdogFailed} fail / {stats.watchdogAborted} aborted
                 </span>
               </div>
-              <button
-                className="btn btnSmall"
-                type="button"
-                style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
-                onClick={() => downloadCsvSnapshot('watchdog', rows)}
-                disabled={!stageReady.watchdog}
-                title="Download bulk initial pull export CSV"
-              >
-                <Download size={14} />
-                Download CSV
-              </button>
             </div>
 
             <div className="breakItem">
@@ -351,17 +332,6 @@ const DashboardPanel = ({
               <div className="breakLine" style={{ marginTop: 8 }}>
                 <span>Remaining</span> <span className="mono">{stats.afterDedup}</span>
               </div>
-              <button
-                className="btn btnSmall"
-                type="button"
-                style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
-                onClick={() => downloadCsvSnapshot('deduplicated', dedupRows)}
-                disabled={!stageReady.deduplicated}
-                title="Download deduplicated CSV"
-              >
-                <Download size={14} />
-                Download CSV
-              </button>
             </div>
 
             <div className="breakItem">
@@ -372,17 +342,6 @@ const DashboardPanel = ({
               <div className="breakLine" style={{ marginTop: 8 }}>
                 <span>Remaining</span> <span className="mono">{stats.afterPurify}</span>
               </div>
-              <button
-                className="btn btnSmall"
-                type="button"
-                style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
-                onClick={() => downloadCsvSnapshot('purified', purifiedRows)}
-                disabled={!stageReady.purified}
-                title="Download purified CSV"
-              >
-                <Download size={14} />
-                Download CSV
-              </button>
             </div>
 
             <div className="breakItem">
@@ -393,17 +352,6 @@ const DashboardPanel = ({
               <div className="breakLine" style={{ marginTop: 8 }}>
                 <span>Remaining</span> <span className="mono">{stats.afterMasterFilter}</span>
               </div>
-              <button
-                className="btn btnSmall"
-                type="button"
-                style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
-                onClick={() => downloadCsvSnapshot('master_filter', filteredRows)}
-                disabled={!stageReady.master_filter}
-                title="Download category filter CSV"
-              >
-                <Download size={14} />
-                Download CSV
-              </button>
             </div>
 
             <div className="breakItem">
@@ -417,6 +365,17 @@ const DashboardPanel = ({
                   {stats.batchesSucceeded} ok / {stats.batchesFailed} fail
                 </span>
               </div>
+              <button
+                className="btn btnSmall"
+                type="button"
+                style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
+                onClick={() => downloadMasterCsv(filteredRows)}
+                disabled={!masterReady}
+                title="Download master CSV (pre-profile puller)"
+              >
+                <Download size={14} />
+                Download Master CSV
+              </button>
             </div>
 
             <div className="breakItem">
