@@ -1184,6 +1184,17 @@ export default function App() {
   });
 
   const filteredOutTotal = stats.dedupRemoved + stats.purifierRemoved + stats.masterFilterRemoved;
+  const prePullReady = useMemo(() => {
+    const totalJobs = stats.watchdogTotalJobs || 0;
+    const completedJobs = stats.watchdogSucceeded + stats.watchdogFailed + stats.watchdogAborted;
+    return totalJobs > 0 && completedJobs === totalJobs && filteredRows.length > 0;
+  }, [
+    filteredRows.length,
+    stats.watchdogAborted,
+    stats.watchdogFailed,
+    stats.watchdogSucceeded,
+    stats.watchdogTotalJobs,
+  ]);
 
   /**
    * ============================================================
@@ -2602,10 +2613,8 @@ export default function App() {
                 filteredOutTotal={filteredOutTotal}
                 keywordCount={keywordCount}
                 downloadCsvSnapshot={downloadCsvSnapshot}
-                rows={rows}
-                dedupRows={dedupRows}
-                purifiedRows={purifiedRows}
                 filteredRows={filteredRows}
+                prePullReady={prePullReady}
                 dedupColumn={dedupColumn}
                 filterColumn={filterColumn}
                 finalWorkbookAvailable={finalWorkbookAvailable}
