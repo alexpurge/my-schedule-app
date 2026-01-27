@@ -6,8 +6,10 @@ import ProgressBar from './components/ProgressBar';
 import SettingsPanel from './components/SettingsPanel';
 import Sidebar from './components/Sidebar';
 import TopHeader from './components/TopHeader';
+import { createStageStore } from './utils/stageStore';
 
 const DEFAULT_DATE_VIOLATION_STREAK_LIMIT = 5;
+const MAX_IN_MEMORY_ROWS = 50000;
 
 /**
  * ============================================================
@@ -592,6 +594,24 @@ const buildCsvContent = (headers, rows) => {
     lines.push(line);
   });
   return lines.join('\n');
+};
+
+const buildCsvChunk = (headers, rows, includeHeader) => {
+  const escapeCell = (value) => {
+    const str = safeToString(value ?? '');
+    if (/["\n,]/.test(str)) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const lines = [];
+  if (includeHeader) lines.push(headers.map(escapeCell).join(','));
+  rows.forEach((row) => {
+    const line = headers.map((header) => escapeCell(row[header])).join(',');
+    lines.push(line);
+  });
+  return lines.join('\n') + '\n';
 };
 
 export default function App() {
@@ -1358,6 +1378,32 @@ export default function App() {
   const [purifiedRows, setPurifiedRows] = useState([]);
   const [filteredRows, setFilteredRows] = useState([]);
   const [sourceBaseName, setSourceBaseName] = useState('pipeline');
+  const [finalHeaders, setFinalHeaders] = useState([]);
+  const stageStoreRef = useRef(null);
+  if (!stageStoreRef.current) {
+    stageStoreRef.current = createStageStore();
+  }
+  const stageStore = stageStoreRef.current;
+  const [stageCounts, setStageCounts] = useState({
+    watchdog: 0,
+    deduplicated: 0,
+    purified: 0,
+    master_filter: 0,
+    apify_items: 0,
+    mobiles: 0,
+    landlines: 0,
+    others: 0,
+  });
+  const [stageStored, setStageStored] = useState({
+    watchdog: false,
+    deduplicated: false,
+    purified: false,
+    master_filter: false,
+    apify_items: false,
+    mobiles: false,
+    landlines: false,
+    others: false,
+  });
 
   /**
    * ============================================================
@@ -1399,10 +1445,11 @@ export default function App() {
   );
 
   const syncStageToSheets = useCallback(
-    async ({ stageKey, headers: stageHeaders, rows: stageRows }) => {
+    async ({ stageKey, headers: stageHeaders, rows: stageRows, rowsSource }) => {
       if (!sheetSyncReady) return false;
-      if (!Array.isArray(stageHeaders) || !Array.isArray(stageRows)) return false;
+      if (!Array.isArray(stageHeaders)) return false;
       if (!stageHeaders.length) return false;
+      if (!Array.isArray(stageRows) && !rowsSource) return false;
 
       const sheetTitle = buildSheetTitle(stageKey);
       let accessToken = null;
@@ -1413,48 +1460,72 @@ export default function App() {
         return false;
       }
 
-      let res = await sheetsRequest({
-        path: '/sheets/sync',
-        body: {
-          spreadsheetId: sheetSpreadsheetId.trim(),
-          sheetTitle,
-          headers: stageHeaders,
-          rows: stageRows,
-          mode: sheetAppendMode,
-        },
-        accessToken,
-      });
+      const sendRows = async (rowsToSend, mode) => {
+        let res = await sheetsRequest({
+          path: '/sheets/sync',
+          body: {
+            spreadsheetId: sheetSpreadsheetId.trim(),
+            sheetTitle,
+            headers: stageHeaders,
+            rows: rowsToSend,
+            mode,
+          },
+          accessToken,
+        });
 
-      if (!res.ok && (res.status === 401 || res.status === 403)) {
-        try {
-          accessToken = await requestSheetsAccessToken('consent');
-          res = await sheetsRequest({
-            path: '/sheets/sync',
-            body: {
-              spreadsheetId: sheetSpreadsheetId.trim(),
-              sheetTitle,
-              headers: stageHeaders,
-              rows: stageRows,
-              mode: sheetAppendMode,
-            },
-            accessToken,
-          });
-        } catch {
-          addLog('Google Sheets authorization expired. Please sign in again.', 'error');
-          return false;
+        if (!res.ok && (res.status === 401 || res.status === 403)) {
+          try {
+            accessToken = await requestSheetsAccessToken('consent');
+            res = await sheetsRequest({
+              path: '/sheets/sync',
+              body: {
+                spreadsheetId: sheetSpreadsheetId.trim(),
+                sheetTitle,
+                headers: stageHeaders,
+                rows: rowsToSend,
+                mode,
+              },
+              accessToken,
+            });
+          } catch {
+            addLog('Google Sheets authorization expired. Please sign in again.', 'error');
+            return { ok: false, status: 401 };
+          }
         }
+
+        return res;
+      };
+
+      let syncedRows = 0;
+      let res = null;
+
+      if (rowsSource?.type === 'store') {
+        let isFirstChunk = true;
+        let failed = false;
+        const baseMode = sheetAppendMode;
+        await stageStore.iterateRows(rowsSource.stageKey, async (rowsChunk) => {
+          if (failed || !Array.isArray(rowsChunk) || rowsChunk.length === 0) return;
+          const mode = baseMode === 'overwrite' && !isFirstChunk ? 'append' : baseMode;
+          res = await sendRows(rowsChunk, mode);
+          if (!res.ok) {
+            failed = true;
+            return;
+          }
+          syncedRows += rowsChunk.length;
+          isFirstChunk = false;
+        });
+      } else {
+        res = await sendRows(stageRows, sheetAppendMode);
+        if (res.ok) syncedRows = stageRows.length;
       }
 
-      if (res.ok) {
+      if (res && res.ok) {
         setSheetStageAvailability((prev) => ({ ...prev, [stageKey]: true }));
-        addLog(`Google Sheets: synced ${stageRows.length} row(s) to "${sheetTitle}".`, 'success');
+        addLog(`Google Sheets: synced ${syncedRows} row(s) to "${sheetTitle}".`, 'success');
         return true;
       }
 
-      addLog(
-        `Google Sheets sync failed for "${sheetTitle}" (${res.status}).`,
-        'error'
-      );
+      addLog(`Google Sheets sync failed for "${sheetTitle}" (${res?.status || 'unknown'}).`, 'error');
       return false;
     },
     [
@@ -1466,6 +1537,7 @@ export default function App() {
       sheetSpreadsheetId,
       sheetSyncReady,
       sheetsRequest,
+      stageStore,
     ]
   );
 
@@ -1602,6 +1674,7 @@ export default function App() {
     setPurifiedRows([]);
     setFilteredRows([]);
     setSourceBaseName('pipeline');
+    setFinalHeaders([]);
 
     setIsRunning(false);
     setStage('idle');
@@ -1613,7 +1686,6 @@ export default function App() {
     setBatchProgress({ total: 0, completed: 0, active: 0 });
 
     setFinalWorkbook(null);
-<<<<<<< HEAD
     setFinalHeaders([]);
     setStageCounts({
       watchdog: 0,
@@ -1656,9 +1728,6 @@ export default function App() {
       landlines: false,
       others: false,
     });
-=======
-
->>>>>>> parent of 5cf7356 (Add indexeddb stage storage for large datasets)
     setWatchdogJobsSafe([]);
     setWatchdogExporting(false);
     setWatchdogExportStatus('');
@@ -1703,12 +1772,13 @@ export default function App() {
       sorterLandline: 0,
       sorterOther: 0,
     });
-  }, [setWatchdogJobsSafe]);
+  }, [setWatchdogJobsSafe, stageStore]);
 
   const downloadCsvSnapshot = useCallback(
     async (stageKey, dataRows) => {
       let csvHeaders = headers;
       let csvRows = dataRows;
+      let csvChunks = null;
       if ((!csvHeaders.length || !csvRows.length) && sheetSyncReady) {
         const remote = await fetchStageFromSheets(stageKey);
         if (remote) {
@@ -1717,15 +1787,26 @@ export default function App() {
         }
       }
 
-      if (!csvHeaders.length || !csvRows.length) return;
-      const csv = buildCsvContent(csvHeaders, csvRows);
+      if ((!csvHeaders.length || !csvRows.length) && stageStored[stageKey]) {
+        const chunks = [];
+        let includeHeader = true;
+        await stageStore.iterateRows(stageKey, (rowsChunk) => {
+          if (!Array.isArray(rowsChunk) || rowsChunk.length === 0) return;
+          chunks.push(buildCsvChunk(csvHeaders, rowsChunk, includeHeader));
+          includeHeader = false;
+        });
+        if (chunks.length) csvChunks = chunks;
+      }
+
+      if (!csvHeaders.length || (!csvRows.length && !csvChunks)) return;
+      const csv = csvChunks ? null : buildCsvContent(csvHeaders, csvRows);
       const date = new Date().toISOString().slice(0, 10);
       const filename = `${sourceBaseName || 'pipeline'}_${stageKey}_${date}.csv`;
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const blob = new Blob(csvChunks ? csvChunks : [csv], { type: 'text/csv;charset=utf-8;' });
       downloadBlob(blob, filename);
       addLog(`Downloaded: ${filename}`, 'success');
     },
-    [addLog, fetchStageFromSheets, headers, sheetSyncReady, sourceBaseName]
+    [addLog, fetchStageFromSheets, headers, sheetSyncReady, sourceBaseName, stageStore, stageStored]
   );
 
   /**
@@ -2201,8 +2282,19 @@ export default function App() {
     // Phase 2: Stream fetch (memory-safe pattern preserved; single CSV internal)
     const DATA_BATCH = 2;
     const DATA_PAGE_SIZE = 200;
-    const allRows = [];
+    const stageKey = 'watchdog';
+    let allRows = [];
     let processedCount = 0;
+    let storedCount = 0;
+    let spilled = false;
+    let spillBuffer = [];
+
+    const flushSpillBuffer = async () => {
+      if (spillBuffer.length === 0) return;
+      await stageStore.appendRows(stageKey, spillBuffer);
+      storedCount += spillBuffer.length;
+      spillBuffer = [];
+    };
 
     for (let i = 0; i < jobsWithData.length; i += DATA_BATCH) {
       const batch = jobsWithData.slice(i, i + DATA_BATCH);
@@ -2229,8 +2321,21 @@ export default function App() {
                 const val = flattened[fieldName] ?? '';
                 rowObj[fieldName] = safeToString(val).replace(/\r?\n/g, ' ');
               }
-
-              allRows.push(rowObj);
+              if (spilled) {
+                spillBuffer.push(rowObj);
+                if (spillBuffer.length >= 500) {
+                  await flushSpillBuffer();
+                }
+              } else {
+                allRows.push(rowObj);
+                if (allRows.length >= MAX_IN_MEMORY_ROWS) {
+                  await stageStore.appendRows(stageKey, allRows);
+                  storedCount += allRows.length;
+                  allRows = [];
+                  spilled = true;
+                  setStageStored((prev) => ({ ...prev, [stageKey]: true }));
+                }
+              }
             }
 
             if (items.length < DATA_PAGE_SIZE) break;
@@ -2252,32 +2357,55 @@ export default function App() {
     setWatchdogExportStatus('');
 
     if (stopRef.current) throw new Error('Stopped by user.');
-    if (allRows.length === 0) throw new Error('Bulk initial pull export produced 0 rows.');
+    if (spilled) {
+      if (allRows.length) {
+        await stageStore.appendRows(stageKey, allRows);
+        storedCount += allRows.length;
+        allRows = [];
+      }
+      await flushSpillBuffer();
+    }
+
+    const totalRows = spilled ? storedCount : allRows.length;
+    if (totalRows === 0) throw new Error('Bulk initial pull export produced 0 rows.');
 
     // Store exported "CSV" (internally) as pipeline input
     setHeaders(exportedHeaders);
-    setRows(allRows);
+    setRows(spilled ? [] : allRows);
+    setStageCounts((prev) => ({ ...prev, [stageKey]: totalRows }));
     setSourceBaseName(`watchdog_export_${new Date().toISOString().slice(0, 10)}`);
 
     setStats((s) => ({
       ...s,
-      watchdogExportedRows: allRows.length,
-      inputRows: allRows.length,
+      watchdogExportedRows: totalRows,
+      inputRows: totalRows,
     }));
 
-    addLog(`Bulk initial pull export complete: ${allRows.length} row(s).`, 'success');
+    addLog(`Bulk initial pull export complete: ${totalRows} row(s).`, 'success');
 
     const watchdogSynced = await syncStageToSheets({
       stageKey: 'watchdog',
       headers: exportedHeaders,
-      rows: allRows,
+      rows: spilled ? null : allRows,
+      rowsSource: spilled ? { type: 'store', stageKey } : null,
     });
 
     if (sheetSyncReady && sheetAutoClear && watchdogSynced) {
       setRows([]);
+      if (spilled) {
+        await stageStore.clearStage(stageKey);
+        setStageStored((prev) => ({ ...prev, [stageKey]: false }));
+        setStageCounts((prev) => ({ ...prev, [stageKey]: 0 }));
+      }
     }
 
-    return { exportedHeaders, allRows, watchdogSynced };
+    return {
+      exportedHeaders,
+      rowsSource: spilled
+        ? { type: 'store', stageKey, count: totalRows }
+        : { type: 'memory', rows: allRows, count: totalRows },
+      watchdogSynced,
+    };
   }, [
     abortWatchdogJob,
     addLog,
@@ -2289,6 +2417,7 @@ export default function App() {
     setWatchdogJobsSafe,
     sheetAutoClear,
     sheetSyncReady,
+    stageStore,
     syncStageToSheets,
     updateWatchdogJob,
     watchdogActiveStatus,
@@ -2554,21 +2683,17 @@ export default function App() {
       // -----------------------------
       // 0) WATCHDOG BULK RUN + INTERNAL EXPORT
       // -----------------------------
-    const { allRows, exportedHeaders, watchdogSynced } = await runWatchdogAndExportRows();
-    let workingRows = allRows;
+    const { rowsSource, exportedHeaders, watchdogSynced } = await runWatchdogAndExportRows();
+    let workingSource = rowsSource;
     let pipelineHeaders = exportedHeaders;
 
       if (stopRef.current) throw new Error('Stopped by user.');
 
       // Validate column settings exist (settings are preset; can be changed in Settings page)
       // (This is runtime validation only; does not modify settings.)
-      const hasDedup = workingRows.length
-        ? Object.prototype.hasOwnProperty.call(workingRows[0], dedupColumn)
-        : false;
-      const hasFilter = workingRows.length
-        ? Object.prototype.hasOwnProperty.call(workingRows[0], filterColumn)
-        : false;
-      const hasUrl = workingRows.length ? Object.prototype.hasOwnProperty.call(workingRows[0], urlColumn) : false;
+      const hasDedup = pipelineHeaders.includes(dedupColumn);
+      const hasFilter = pipelineHeaders.includes(filterColumn);
+      const hasUrl = pipelineHeaders.includes(urlColumn);
 
       if (!hasDedup) throw new Error(`Deduplicate column not found in bulk initial pull export: "${dedupColumn}"`);
       if (!hasFilter) throw new Error(`Category Filter column not found in bulk initial pull export: "${filterColumn}"`);
@@ -2582,7 +2707,6 @@ export default function App() {
       setProgress(35);
 
       const keywordColumn = 'keyword';
-<<<<<<< HEAD
       const dedupStageKey = 'deduplicated';
       const dedupSourceCount = workingSource.count || 0;
       const keywordColumns = workingSource.type === 'memory'
@@ -2608,20 +2732,15 @@ export default function App() {
               idx === 0 ? keywordColumn : `${keywordColumn}_${idx + 1}`
             );
           })();
-=======
-      const keywordColumns = getKeywordColumns(workingRows);
->>>>>>> parent of 5cf7356 (Add indexeddb stage storage for large datasets)
       const keywordColumnsToUse = keywordColumns.length ? keywordColumns : [keywordColumn];
       const seen = new Set();
-      const deduped = [];
       const dedupedMap = new Map();
       let maxKeywords = 0;
       let dupRemoved = 0;
+      let processed = 0;
 
       const dedupChunk = 400;
-      for (let i = 0; i < workingRows.length; i += 1) {
-        if (stopRef.current) throw new Error('Stopped by user.');
-        const row = workingRows[i];
+      const handleRow = (row) => {
         const key = safeToString(row[dedupColumn]).trim();
         const rowKeywords = extractKeywordsFromRow(row, keywordColumnsToUse);
         if (seen.has(key)) {
@@ -2636,13 +2755,19 @@ export default function App() {
           rowKeywords.forEach((keyword) => keywordSet.add(keyword));
           dedupedMap.set(key, { row, keywords: keywordSet });
         }
+        processed += 1;
+      };
 
-        if (i % dedupChunk === 0) {
-          await sleep(0);
-          const pct = 35 + (i / Math.max(1, workingRows.length)) * 4; // 35 -> 39
-          setProgress(Math.min(39, Math.max(35, pct)));
+      if (workingSource.type === 'memory') {
+        for (let i = 0; i < workingSource.rows.length; i += 1) {
+          if (stopRef.current) throw new Error('Stopped by user.');
+          handleRow(workingSource.rows[i]);
+          if (i % dedupChunk === 0) {
+            await sleep(0);
+            const pct = 35 + (i / Math.max(1, workingSource.rows.length)) * 4; // 35 -> 39
+            setProgress(Math.min(39, Math.max(35, pct)));
+          }
         }
-<<<<<<< HEAD
       } else {
         await stageStore.iterateRows(workingSource.stageKey, async (rowsChunk) => {
           for (const row of rowsChunk) {
@@ -2655,14 +2780,28 @@ export default function App() {
             }
           }
         });
-=======
->>>>>>> parent of 5cf7356 (Add indexeddb stage storage for large datasets)
       }
 
-      if (sheetSyncReady && sheetAutoClear && watchdogSynced) {
-        workingRows.length = 0;
+      if (sheetSyncReady && sheetAutoClear && watchdogSynced && workingSource.type === 'memory') {
+        workingSource.rows.length = 0;
         setRows([]);
       }
+      if (sheetSyncReady && sheetAutoClear && watchdogSynced && workingSource.type === 'store') {
+        await stageStore.clearStage(workingSource.stageKey);
+        setStageStored((prev) => ({ ...prev, [workingSource.stageKey]: false }));
+        setStageCounts((prev) => ({ ...prev, [workingSource.stageKey]: 0 }));
+      }
+
+      let deduped = [];
+      let dedupedStoredCount = 0;
+      let dedupedSpilled = false;
+      let dedupedBuffer = [];
+      const flushDedupedBuffer = async () => {
+        if (!dedupedBuffer.length) return;
+        await stageStore.appendRows(dedupStageKey, dedupedBuffer);
+        dedupedStoredCount += dedupedBuffer.length;
+        dedupedBuffer = [];
+      };
 
       for (const { row, keywords } of dedupedMap.values()) {
         const list = Array.from(keywords);
@@ -2671,8 +2810,33 @@ export default function App() {
         for (let i = 1; i < list.length; i += 1) {
           row[`${keywordColumn}_${i + 1}`] = list[i];
         }
-        deduped.push(row);
+        if (dedupedSpilled) {
+          dedupedBuffer.push(row);
+          if (dedupedBuffer.length >= 500) {
+            await flushDedupedBuffer();
+          }
+        } else {
+          deduped.push(row);
+          if (deduped.length >= MAX_IN_MEMORY_ROWS) {
+            await stageStore.appendRows(dedupStageKey, deduped);
+            dedupedStoredCount += deduped.length;
+            deduped = [];
+            dedupedSpilled = true;
+            setStageStored((prev) => ({ ...prev, [dedupStageKey]: true }));
+          }
+        }
       }
+
+      if (dedupedSpilled) {
+        if (deduped.length) {
+          await stageStore.appendRows(dedupStageKey, deduped);
+          dedupedStoredCount += deduped.length;
+          deduped = [];
+        }
+        await flushDedupedBuffer();
+      }
+
+      const dedupedTotal = dedupedSpilled ? dedupedStoredCount : deduped.length;
 
       if (maxKeywords > 1) {
         const baseHeaders = pipelineHeaders.filter(
@@ -2685,26 +2849,35 @@ export default function App() {
         setHeaders(pipelineHeaders);
       }
 
+      setStageCounts((prev) => ({ ...prev, [dedupStageKey]: dedupedTotal }));
       setStats((s) => ({
         ...s,
         dedupRemoved: dupRemoved,
-        afterDedup: deduped.length,
+        afterDedup: dedupedTotal,
       }));
-      setDedupRows(deduped);
+      setDedupRows(dedupedSpilled ? [] : deduped);
 
       const dedupSynced = await syncStageToSheets({
-        stageKey: 'deduplicated',
+        stageKey: dedupStageKey,
         headers: pipelineHeaders,
-        rows: deduped,
+        rows: dedupedSpilled ? null : deduped,
+        rowsSource: dedupedSpilled ? { type: 'store', stageKey: dedupStageKey } : null,
       });
 
       if (sheetSyncReady && sheetAutoClear && dedupSynced) {
         setDedupRows([]);
+        if (dedupedSpilled) {
+          await stageStore.clearStage(dedupStageKey);
+          setStageStored((prev) => ({ ...prev, [dedupStageKey]: false }));
+          setStageCounts((prev) => ({ ...prev, [dedupStageKey]: 0 }));
+        }
       }
 
       addLog(`Deduplicator: removed ${dupRemoved} duplicates (by "${dedupColumn}").`, dupRemoved ? 'warning' : 'success');
 
-      workingRows = deduped;
+      workingSource = dedupedSpilled
+        ? { type: 'store', stageKey: dedupStageKey, count: dedupedTotal }
+        : { type: 'memory', rows: deduped, count: dedupedTotal };
 
       // -----------------------------
       // 2) PURIFY
@@ -2713,27 +2886,41 @@ export default function App() {
       setStatus('Purifying (removing foreign script rows)...');
       setProgress(40);
 
+      const purifyStageKey = 'purified';
       const purified = [];
       let purifierRemoved = 0;
+      let purifiedStoredCount = 0;
+      let purifiedSpilled = false;
+      let purifiedBuffer = [];
       const chunk = 250;
-<<<<<<< HEAD
       const purifySourceCount = workingSource.count || 0;
       let processed = 0;
-=======
->>>>>>> parent of 5cf7356 (Add indexeddb stage storage for large datasets)
 
-      for (let i = 0; i < deduped.length; i++) {
-        if (stopRef.current) throw new Error('Stopped by user.');
-        const rowObj = deduped[i];
-        if (rowHasForeignScript(rowObj)) purifierRemoved++;
-        else purified.push(rowObj);
+      const flushPurifiedBuffer = async () => {
+        if (!purifiedBuffer.length) return;
+        await stageStore.appendRows(purifyStageKey, purifiedBuffer);
+        purifiedStoredCount += purifiedBuffer.length;
+        purifiedBuffer = [];
+      };
 
-        if (i % chunk === 0) {
-          await sleep(0);
-          const pct = 40 + (i / Math.max(1, deduped.length)) * 8; // 40 -> 48
-          setProgress(Math.min(48, Math.max(40, pct)));
+      const handlePurifyRow = async (rowObj) => {
+        if (rowHasForeignScript(rowObj)) {
+          purifierRemoved++;
+        } else if (purifiedSpilled) {
+          purifiedBuffer.push(rowObj);
+          if (purifiedBuffer.length >= 500) {
+            await flushPurifiedBuffer();
+          }
+        } else {
+          purified.push(rowObj);
+          if (purified.length >= MAX_IN_MEMORY_ROWS) {
+            await stageStore.appendRows(purifyStageKey, purified);
+            purifiedStoredCount += purified.length;
+            purified.length = 0;
+            purifiedSpilled = true;
+            setStageStored((prev) => ({ ...prev, [purifyStageKey]: true }));
+          }
         }
-<<<<<<< HEAD
       };
 
       if (workingSource.type === 'memory') {
@@ -2760,21 +2947,32 @@ export default function App() {
             }
           }
         });
-=======
->>>>>>> parent of 5cf7356 (Add indexeddb stage storage for large datasets)
       }
 
+      if (purifiedSpilled) {
+        if (purified.length) {
+          await stageStore.appendRows(purifyStageKey, purified);
+          purifiedStoredCount += purified.length;
+          purified.length = 0;
+        }
+        await flushPurifiedBuffer();
+      }
+
+      const purifiedTotal = purifiedSpilled ? purifiedStoredCount : purified.length;
+
+      setStageCounts((prev) => ({ ...prev, [purifyStageKey]: purifiedTotal }));
       setStats((s) => ({
         ...s,
         purifierRemoved,
-        afterPurify: purified.length,
+        afterPurify: purifiedTotal,
       }));
-      setPurifiedRows(purified);
+      setPurifiedRows(purifiedSpilled ? [] : purified);
 
       const purifiedSynced = await syncStageToSheets({
-        stageKey: 'purified',
+        stageKey: purifyStageKey,
         headers: pipelineHeaders,
-        rows: purified,
+        rows: purifiedSpilled ? null : purified,
+        rowsSource: purifiedSpilled ? { type: 'store', stageKey: purifyStageKey } : null,
       });
 
       addLog(
@@ -2783,11 +2981,19 @@ export default function App() {
       );
 
       if (sheetSyncReady && sheetAutoClear && purifiedSynced) {
-        deduped.length = 0;
-        setDedupRows([]);
+        if (workingSource.type === 'memory') {
+          workingSource.rows.length = 0;
+          setDedupRows([]);
+        } else {
+          await stageStore.clearStage(workingSource.stageKey);
+          setStageStored((prev) => ({ ...prev, [workingSource.stageKey]: false }));
+          setStageCounts((prev) => ({ ...prev, [workingSource.stageKey]: 0 }));
+        }
       }
 
-      workingRows = purified;
+      workingSource = purifiedSpilled
+        ? { type: 'store', stageKey: purifyStageKey, count: purifiedTotal }
+        : { type: 'memory', rows: purified, count: purifiedTotal };
 
       // -----------------------------
       // 3) MASTER FILTER (HARD-CODED KEYWORDS)
@@ -2796,34 +3002,68 @@ export default function App() {
       setStatus('Category Filtering (hard-coded keywords)...');
       setProgress(48);
 
+      const filterStageKey = 'master_filter';
       const kept = [];
+      let keptStoredCount = 0;
+      let keptSpilled = false;
+      let keptBuffer = [];
       let masterFilterRemoved = 0;
-<<<<<<< HEAD
       const filterSourceCount = workingSource.count || 0;
       let processed = 0;
-=======
->>>>>>> parent of 5cf7356 (Add indexeddb stage storage for large datasets)
 
-      if (matchMode === 'contains') {
-        const keywords = Array.from(allowSet);
-        for (let i = 0; i < workingRows.length; i++) {
-          if (stopRef.current) throw new Error('Stopped by user.');
-          const rowObj = workingRows[i];
-          const raw = safeToString(rowObj[filterColumn]).trim();
-          const val = raw.toLowerCase();
+      const flushKeptBuffer = async () => {
+        if (!keptBuffer.length) return;
+        await stageStore.appendRows(filterStageKey, keptBuffer);
+        keptStoredCount += keptBuffer.length;
+        keptBuffer = [];
+      };
 
+      const handleKeptRow = async (rowObj, shouldKeep) => {
+        if (shouldKeep) {
+          if (keptSpilled) {
+            keptBuffer.push(rowObj);
+            if (keptBuffer.length >= 500) {
+              await flushKeptBuffer();
+            }
+          } else {
+            kept.push(rowObj);
+            if (kept.length >= MAX_IN_MEMORY_ROWS) {
+              await stageStore.appendRows(filterStageKey, kept);
+              keptStoredCount += kept.length;
+              kept.length = 0;
+              keptSpilled = true;
+              setStageStored((prev) => ({ ...prev, [filterStageKey]: true }));
+            }
+          }
+        } else {
+          masterFilterRemoved++;
+        }
+        processed += 1;
+      };
+
+      const keywords = matchMode === 'contains' ? Array.from(allowSet) : null;
+      const processRow = async (rowObj) => {
+        const raw = safeToString(rowObj[filterColumn]).trim();
+        const val = raw.toLowerCase();
+        if (matchMode === 'contains') {
           const hit = keywords.some((k) => k && val.includes(k));
-          if (hit) kept.push(rowObj);
-          else masterFilterRemoved++;
+          await handleKeptRow(rowObj, hit);
+        } else {
+          await handleKeptRow(rowObj, allowSet.has(val));
+        }
+      };
 
+      if (workingSource.type === 'memory') {
+        for (let i = 0; i < workingSource.rows.length; i++) {
+          if (stopRef.current) throw new Error('Stopped by user.');
+          await processRow(workingSource.rows[i]);
           if (i % chunk === 0) {
             await sleep(0);
-            const pct = 48 + (i / Math.max(1, workingRows.length)) * 7; // 48 -> 55
+            const pct = 48 + (i / Math.max(1, workingSource.rows.length)) * 7; // 48 -> 55
             setProgress(Math.min(55, Math.max(48, pct)));
           }
         }
       } else {
-<<<<<<< HEAD
         await stageStore.iterateRows(workingSource.stageKey, async (rowsChunk) => {
           for (const rowObj of rowsChunk) {
             if (stopRef.current) throw new Error('Stopped by user.');
@@ -2833,51 +3073,57 @@ export default function App() {
               const pct = 48 + (processed / Math.max(1, filterSourceCount)) * 7; // 48 -> 55
               setProgress(Math.min(55, Math.max(48, pct)));
             }
-=======
-        for (let i = 0; i < workingRows.length; i++) {
-          if (stopRef.current) throw new Error('Stopped by user.');
-          const rowObj = workingRows[i];
-          const raw = safeToString(rowObj[filterColumn]).trim();
-          const val = raw.toLowerCase();
-
-          if (allowSet.has(val)) kept.push(rowObj);
-          else masterFilterRemoved++;
-
-          if (i % chunk === 0) {
-            await sleep(0);
-            const pct = 48 + (i / Math.max(1, workingRows.length)) * 7; // 48 -> 55
-            setProgress(Math.min(55, Math.max(48, pct)));
->>>>>>> parent of 5cf7356 (Add indexeddb stage storage for large datasets)
           }
-        }
+        });
       }
 
+      if (keptSpilled) {
+        if (kept.length) {
+          await stageStore.appendRows(filterStageKey, kept);
+          keptStoredCount += kept.length;
+          kept.length = 0;
+        }
+        await flushKeptBuffer();
+      }
+
+      const keptTotal = keptSpilled ? keptStoredCount : kept.length;
+
+      setStageCounts((prev) => ({ ...prev, [filterStageKey]: keptTotal }));
       setStats((s) => ({
         ...s,
         masterFilterRemoved,
-        afterMasterFilter: kept.length,
+        afterMasterFilter: keptTotal,
       }));
-      setFilteredRows(kept);
+      setFilteredRows(keptSpilled ? [] : kept);
 
       const filterSynced = await syncStageToSheets({
-        stageKey: 'master_filter',
+        stageKey: filterStageKey,
         headers: pipelineHeaders,
-        rows: kept,
+        rows: keptSpilled ? null : kept,
+        rowsSource: keptSpilled ? { type: 'store', stageKey: filterStageKey } : null,
       });
 
       addLog(
-        `Category Filter: kept ${kept.length}, removed ${masterFilterRemoved} (column "${filterColumn}", mode "${matchMode}").`,
-        kept.length ? 'success' : 'warning'
+        `Category Filter: kept ${keptTotal}, removed ${masterFilterRemoved} (column "${filterColumn}", mode "${matchMode}").`,
+        keptTotal ? 'success' : 'warning'
       );
 
       if (sheetSyncReady && sheetAutoClear && filterSynced) {
-        purified.length = 0;
-        setPurifiedRows([]);
+        if (workingSource.type === 'memory') {
+          workingSource.rows.length = 0;
+          setPurifiedRows([]);
+        } else {
+          await stageStore.clearStage(workingSource.stageKey);
+          setStageStored((prev) => ({ ...prev, [workingSource.stageKey]: false }));
+          setStageCounts((prev) => ({ ...prev, [workingSource.stageKey]: 0 }));
+        }
       }
 
-      workingRows = kept;
+      workingSource = keptSpilled
+        ? { type: 'store', stageKey: filterStageKey, count: keptTotal }
+        : { type: 'memory', rows: kept, count: keptTotal };
 
-      if (kept.length === 0) {
+      if (keptTotal === 0) {
         throw new Error('Category Filter produced 0 rows. Nothing to send to Apify.');
       }
 
@@ -2888,16 +3134,80 @@ export default function App() {
       setStatus('Running Apify batches...');
       setProgress(55);
 
-      const apifyKeywordColumns = getKeywordColumns(kept);
-      const urlKeywordMap = buildUrlKeywordMap(kept, apifyKeywordColumns);
-      const allUrls = urlKeywordMap.size ? Array.from(urlKeywordMap.keys()) : extractUrls(kept);
+      const apifyKeywordColumns = workingSource.type === 'memory'
+        ? getKeywordColumns(workingSource.rows)
+        : await (async () => {
+            let maxIndex = 0;
+            await stageStore.iterateRows(workingSource.stageKey, (rowsChunk) => {
+              for (const row of rowsChunk) {
+                for (const key of Object.keys(row || {})) {
+                  if (key === 'keyword') {
+                    maxIndex = Math.max(maxIndex, 1);
+                    continue;
+                  }
+                  if (key.startsWith('keyword_')) {
+                    const suffix = Number(key.replace('keyword_', ''));
+                    if (!Number.isNaN(suffix)) maxIndex = Math.max(maxIndex, suffix);
+                  }
+                }
+              }
+            });
+            if (maxIndex === 0) return [];
+            return Array.from({ length: maxIndex }, (_, idx) => (idx === 0 ? 'keyword' : `keyword_${idx + 1}`));
+          })();
+
+      const urlKeywordMap = new Map();
+      if (workingSource.type === 'memory') {
+        const map = buildUrlKeywordMap(workingSource.rows, apifyKeywordColumns);
+        map.forEach((value, key) => urlKeywordMap.set(key, value));
+      } else {
+        await stageStore.iterateRows(workingSource.stageKey, (rowsChunk) => {
+          for (const row of rowsChunk) {
+            const urls = extractUrlsFromRow(row);
+            if (!urls.length) continue;
+            const keywordValues = extractKeywordsFromRow(row, apifyKeywordColumns);
+            for (const url of urls) {
+              if (!urlKeywordMap.has(url)) urlKeywordMap.set(url, new Set());
+              const keywordSet = urlKeywordMap.get(url);
+              for (const keyword of keywordValues) keywordSet.add(keyword);
+            }
+          }
+        });
+      }
+
+      const allUrls = urlKeywordMap.size
+        ? Array.from(urlKeywordMap.keys())
+        : workingSource.type === 'memory'
+          ? extractUrls(workingSource.rows)
+          : await (async () => {
+              const out = [];
+              const seen = new Set();
+              await stageStore.iterateRows(workingSource.stageKey, (rowsChunk) => {
+                for (const row of rowsChunk) {
+                  const urls = extractUrlsFromRow(row);
+                  for (const normalized of urls) {
+                    if (!seen.has(normalized)) {
+                      seen.add(normalized);
+                      out.push(normalized);
+                    }
+                  }
+                }
+              });
+              return out;
+            })();
       setStats((s) => ({ ...s, urlsForApify: allUrls.length }));
 
       if (!allUrls.length) throw new Error(`No URLs detected in column "${urlColumn}".`);
 
       if (sheetSyncReady && sheetAutoClear && filterSynced) {
-        workingRows.length = 0;
-        setFilteredRows([]);
+        if (workingSource.type === 'memory') {
+          workingSource.rows.length = 0;
+          setFilteredRows([]);
+        } else {
+          await stageStore.clearStage(workingSource.stageKey);
+          setStageStored((prev) => ({ ...prev, [workingSource.stageKey]: false }));
+          setStageCounts((prev) => ({ ...prev, [workingSource.stageKey]: 0 }));
+        }
       }
 
       addLog(`Apify: extracted ${allUrls.length} URL(s) from "${urlColumn}".`, 'info');
@@ -2964,7 +3274,18 @@ export default function App() {
 
       addLog(`Fetching dataset items from ${validIds.length} dataset(s)...`, 'info');
 
+      const apifyStageKey = 'apify_items';
       let allItems = [];
+      let apifyStoredCount = 0;
+      let apifySpilled = false;
+      let apifyBuffer = [];
+
+      const flushApifyBuffer = async () => {
+        if (!apifyBuffer.length) return;
+        await stageStore.appendRows(apifyStageKey, apifyBuffer);
+        apifyStoredCount += apifyBuffer.length;
+        apifyBuffer = [];
+      };
 
       for (let i = 0; i < validIds.length; i++) {
         if (stopRef.current) throw new Error('Stopped by user.');
@@ -2990,7 +3311,21 @@ export default function App() {
               return enrichedItem;
             });
 
-            allItems = allItems.concat(enriched);
+            if (apifySpilled) {
+              apifyBuffer.push(...enriched);
+              if (apifyBuffer.length >= 500) {
+                await flushApifyBuffer();
+              }
+            } else {
+              allItems = allItems.concat(enriched);
+              if (allItems.length >= MAX_IN_MEMORY_ROWS) {
+                await stageStore.appendRows(apifyStageKey, allItems);
+                apifyStoredCount += allItems.length;
+                allItems = [];
+                apifySpilled = true;
+                setStageStored((prev) => ({ ...prev, [apifyStageKey]: true }));
+              }
+            }
           }
           addLog(`Dataset ${i + 1}/${validIds.length}: ${Array.isArray(items) ? items.length : 0} item(s).`, 'info');
         } else {
@@ -3002,10 +3337,21 @@ export default function App() {
         await sleep(0);
       }
 
-      if (!allItems.length) throw new Error('No data found in datasets.');
+      if (apifySpilled) {
+        if (allItems.length) {
+          await stageStore.appendRows(apifyStageKey, allItems);
+          apifyStoredCount += allItems.length;
+          allItems = [];
+        }
+        await flushApifyBuffer();
+      }
 
-      setStats((s) => ({ ...s, apifyItems: allItems.length }));
-      addLog(`Apify: merged ${allItems.length} total record(s).`, 'success');
+      const apifyTotal = apifySpilled ? apifyStoredCount : allItems.length;
+      if (!apifyTotal) throw new Error('No data found in datasets.');
+
+      setStageCounts((prev) => ({ ...prev, [apifyStageKey]: apifyTotal }));
+      setStats((s) => ({ ...s, apifyItems: apifyTotal }));
+      addLog(`Apify: merged ${apifyTotal} total record(s).`, 'success');
 
       // -----------------------------
       // 6) AU NUMBER SORTER
@@ -3014,15 +3360,32 @@ export default function App() {
       setStatus('Sorting Australian numbers...');
       setProgress(92);
 
+      const apifySource = apifySpilled
+        ? { type: 'store', stageKey: apifyStageKey, count: apifyTotal }
+        : { type: 'memory', rows: allItems, count: apifyTotal };
+
       const allKeys = [];
       const keySet = new Set();
-      for (const it of allItems) {
-        for (const k of Object.keys(it || {})) {
-          if (!keySet.has(k)) {
-            keySet.add(k);
-            allKeys.push(k);
+      if (apifySource.type === 'memory') {
+        for (const it of apifySource.rows) {
+          for (const k of Object.keys(it || {})) {
+            if (!keySet.has(k)) {
+              keySet.add(k);
+              allKeys.push(k);
+            }
           }
         }
+      } else {
+        await stageStore.iterateRows(apifySource.stageKey, (rowsChunk) => {
+          for (const it of rowsChunk) {
+            for (const k of Object.keys(it || {})) {
+              if (!keySet.has(k)) {
+                keySet.add(k);
+                allKeys.push(k);
+              }
+            }
+          }
+        });
       }
 
       if (apifyKeywordColumns.length > 0) {
@@ -3042,16 +3405,85 @@ export default function App() {
         keySet.add(guessedPhoneCol);
       }
 
+      const mobileStageKey = 'mobiles';
+      const landlineStageKey = 'landlines';
+      const otherStageKey = 'others';
       const mobileList = [];
       const landlineList = [];
       const otherList = [];
-
+      let mobileStoredCount = 0;
+      let landlineStoredCount = 0;
+      let otherStoredCount = 0;
+      let mobileSpilled = false;
+      let landlineSpilled = false;
+      let otherSpilled = false;
+      let mobileBuffer = [];
+      let landlineBuffer = [];
+      let otherBuffer = [];
       const sortChunk = 250;
+      let processed = 0;
 
-      for (let idx = 0; idx < allItems.length; idx++) {
-        if (stopRef.current) throw new Error('Stopped by user.');
-        const row = allItems[idx] || {};
+      const flushOutputBuffer = async (stageKey, buffer) => {
+        if (!buffer.length) return 0;
+        await stageStore.appendRows(stageKey, buffer);
+        const count = buffer.length;
+        buffer.length = 0;
+        return count;
+      };
 
+      const handleOutputRow = async (stageKey, rowObj) => {
+        if (stageKey === mobileStageKey) {
+          if (mobileSpilled) {
+            mobileBuffer.push(rowObj);
+            if (mobileBuffer.length >= 500) {
+              mobileStoredCount += await flushOutputBuffer(mobileStageKey, mobileBuffer);
+            }
+          } else {
+            mobileList.push(rowObj);
+            if (mobileList.length >= MAX_IN_MEMORY_ROWS) {
+              await stageStore.appendRows(mobileStageKey, mobileList);
+              mobileStoredCount += mobileList.length;
+              mobileList.length = 0;
+              mobileSpilled = true;
+              setStageStored((prev) => ({ ...prev, [mobileStageKey]: true }));
+            }
+          }
+        } else if (stageKey === landlineStageKey) {
+          if (landlineSpilled) {
+            landlineBuffer.push(rowObj);
+            if (landlineBuffer.length >= 500) {
+              landlineStoredCount += await flushOutputBuffer(landlineStageKey, landlineBuffer);
+            }
+          } else {
+            landlineList.push(rowObj);
+            if (landlineList.length >= MAX_IN_MEMORY_ROWS) {
+              await stageStore.appendRows(landlineStageKey, landlineList);
+              landlineStoredCount += landlineList.length;
+              landlineList.length = 0;
+              landlineSpilled = true;
+              setStageStored((prev) => ({ ...prev, [landlineStageKey]: true }));
+            }
+          }
+        } else {
+          if (otherSpilled) {
+            otherBuffer.push(rowObj);
+            if (otherBuffer.length >= 500) {
+              otherStoredCount += await flushOutputBuffer(otherStageKey, otherBuffer);
+            }
+          } else {
+            otherList.push(rowObj);
+            if (otherList.length >= MAX_IN_MEMORY_ROWS) {
+              await stageStore.appendRows(otherStageKey, otherList);
+              otherStoredCount += otherList.length;
+              otherList.length = 0;
+              otherSpilled = true;
+              setStageStored((prev) => ({ ...prev, [otherStageKey]: true }));
+            }
+          }
+        }
+      };
+
+      const processRow = async (row) => {
         const uniqueMobilesFound = new Set();
         for (const k of Object.keys(row)) {
           const cellVal = safeToString(row[k]);
@@ -3069,7 +3501,7 @@ export default function App() {
             }
           });
 
-          mobileList.push({ ...row, [guessedPhoneCol]: newMasterVal });
+          await handleOutputRow(mobileStageKey, { ...row, [guessedPhoneCol]: newMasterVal });
         } else {
           let hasLandline = false;
           for (const k of Object.keys(row)) {
@@ -3081,26 +3513,80 @@ export default function App() {
               break;
             }
           }
-          if (hasLandline) landlineList.push(row);
-          else otherList.push(row);
+          if (hasLandline) {
+            await handleOutputRow(landlineStageKey, row);
+          } else {
+            await handleOutputRow(otherStageKey, row);
+          }
         }
 
-        if (idx % sortChunk === 0) {
+        processed += 1;
+        if (processed % sortChunk === 0) {
           await sleep(0);
-          const pct = 92 + (idx / Math.max(1, allItems.length)) * 6; // 92 -> 98
+          const pct = 92 + (processed / Math.max(1, apifyTotal)) * 6; // 92 -> 98
           setProgress(Math.min(98, Math.max(92, pct)));
         }
+      };
+
+      if (apifySource.type === 'memory') {
+        for (let idx = 0; idx < apifySource.rows.length; idx++) {
+          if (stopRef.current) throw new Error('Stopped by user.');
+          await processRow(apifySource.rows[idx] || {});
+        }
+      } else {
+        await stageStore.iterateRows(apifySource.stageKey, async (rowsChunk) => {
+          for (const row of rowsChunk) {
+            if (stopRef.current) throw new Error('Stopped by user.');
+            await processRow(row || {});
+          }
+        });
       }
+
+      if (mobileSpilled) {
+        if (mobileList.length) {
+          await stageStore.appendRows(mobileStageKey, mobileList);
+          mobileStoredCount += mobileList.length;
+          mobileList.length = 0;
+        }
+        mobileStoredCount += await flushOutputBuffer(mobileStageKey, mobileBuffer);
+      }
+      if (landlineSpilled) {
+        if (landlineList.length) {
+          await stageStore.appendRows(landlineStageKey, landlineList);
+          landlineStoredCount += landlineList.length;
+          landlineList.length = 0;
+        }
+        landlineStoredCount += await flushOutputBuffer(landlineStageKey, landlineBuffer);
+      }
+      if (otherSpilled) {
+        if (otherList.length) {
+          await stageStore.appendRows(otherStageKey, otherList);
+          otherStoredCount += otherList.length;
+          otherList.length = 0;
+        }
+        otherStoredCount += await flushOutputBuffer(otherStageKey, otherBuffer);
+      }
+
+      const mobilesTotal = mobileSpilled ? mobileStoredCount : mobileList.length;
+      const landlinesTotal = landlineSpilled ? landlineStoredCount : landlineList.length;
+      const othersTotal = otherSpilled ? otherStoredCount : otherList.length;
+
+      setStageCounts((prev) => ({
+        ...prev,
+        [mobileStageKey]: mobilesTotal,
+        [landlineStageKey]: landlinesTotal,
+        [otherStageKey]: othersTotal,
+      }));
 
       setStats((s) => ({
         ...s,
-        sorterMobile: mobileList.length,
-        sorterLandline: landlineList.length,
-        sorterOther: otherList.length,
+        sorterMobile: mobilesTotal,
+        sorterLandline: landlinesTotal,
+        sorterOther: othersTotal,
       }));
 
       addLog(
-        `Number Sorter: mobiles ${mobileList.length}, landlines ${landlineList.length}, others ${otherList.length}.`,
+        `Number Sorter: mobiles ${mobilesTotal}, landlines ${landlinesTotal}, others ${othersTotal}.`,
         'success'
       );
 
@@ -3111,20 +3597,40 @@ export default function App() {
       setStatus('Complete. Ready to download final spreadsheet.');
       setProgress(100);
 
-      const finalWorkbookPayload = {
-        headers: allKeys,
-        fileBaseName: sourceBaseName || 'pipeline',
-        sheets: [
-          { name: 'Mobiles', rows: mobileList },
-          { name: 'Landlines', rows: landlineList },
-          { name: 'Others', rows: otherList },
-        ],
-      };
+      const finalSpilled = mobileSpilled || landlineSpilled || otherSpilled;
+      const finalWorkbookPayload = finalSpilled
+        ? null
+        : {
+            headers: allKeys,
+            fileBaseName: sourceBaseName || 'pipeline',
+            sheets: [
+              { name: 'Mobiles', rows: mobileList },
+              { name: 'Landlines', rows: landlineList },
+              { name: 'Others', rows: otherList },
+            ],
+          };
+
+      setFinalHeaders(allKeys);
 
       const finalSyncResults = await Promise.all([
-        syncStageToSheets({ stageKey: 'mobiles', headers: allKeys, rows: mobileList }),
-        syncStageToSheets({ stageKey: 'landlines', headers: allKeys, rows: landlineList }),
-        syncStageToSheets({ stageKey: 'others', headers: allKeys, rows: otherList }),
+        syncStageToSheets({
+          stageKey: 'mobiles',
+          headers: allKeys,
+          rows: mobileSpilled ? null : mobileList,
+          rowsSource: mobileSpilled ? { type: 'store', stageKey: mobileStageKey } : null,
+        }),
+        syncStageToSheets({
+          stageKey: 'landlines',
+          headers: allKeys,
+          rows: landlineSpilled ? null : landlineList,
+          rowsSource: landlineSpilled ? { type: 'store', stageKey: landlineStageKey } : null,
+        }),
+        syncStageToSheets({
+          stageKey: 'others',
+          headers: allKeys,
+          rows: otherSpilled ? null : otherList,
+          rowsSource: otherSpilled ? { type: 'store', stageKey: otherStageKey } : null,
+        }),
       ]);
 
       const finalSynced = finalSyncResults.every(Boolean);
@@ -3132,9 +3638,33 @@ export default function App() {
       setFinalWorkbook(sheetSyncReady && sheetAutoClear && finalSynced ? null : finalWorkbookPayload);
 
       if (sheetSyncReady && sheetAutoClear && finalSynced) {
-        mobileList.length = 0;
-        landlineList.length = 0;
-        otherList.length = 0;
+        if (!finalSpilled) {
+          mobileList.length = 0;
+          landlineList.length = 0;
+          otherList.length = 0;
+        } else {
+          await stageStore.clearStage(mobileStageKey);
+          await stageStore.clearStage(landlineStageKey);
+          await stageStore.clearStage(otherStageKey);
+          setStageStored((prev) => ({
+            ...prev,
+            [mobileStageKey]: false,
+            [landlineStageKey]: false,
+            [otherStageKey]: false,
+          }));
+          setStageCounts((prev) => ({
+            ...prev,
+            [mobileStageKey]: 0,
+            [landlineStageKey]: 0,
+            [otherStageKey]: 0,
+          }));
+        }
+      }
+
+      if (apifySource.type === 'store') {
+        await stageStore.clearStage(apifyStageKey);
+        setStageStored((prev) => ({ ...prev, [apifyStageKey]: false }));
+        setStageCounts((prev) => ({ ...prev, [apifyStageKey]: 0 }));
       }
 
       addLog('--- PIPELINE COMPLETE ---', 'success');
@@ -3155,7 +3685,9 @@ export default function App() {
     apifyRequest,
     buildUrlKeywordMap,
     dedupColumn,
+    extractKeywordsFromRow,
     extractUrls,
+    extractUrlsFromRow,
     filterColumn,
     headers,
     getKeywordColumns,
@@ -3167,6 +3699,7 @@ export default function App() {
     sheetAutoClear,
     sheetSyncReady,
     sourceBaseName,
+    stageStore,
     syncStageToSheets,
     urlColumn,
     setDedupRows,
@@ -3206,9 +3739,9 @@ export default function App() {
         });
       });
 
-      const finalHeaders = mergedHeaders.length ? mergedHeaders : headers;
+      const resolvedHeaders = mergedHeaders.length ? mergedHeaders : headers;
       workbook = {
-        headers: finalHeaders,
+        headers: resolvedHeaders,
         fileBaseName: sourceBaseName || 'pipeline',
         sheets: [
           { name: 'Mobiles', rows: mobiles?.rows || [] },
@@ -3216,6 +3749,28 @@ export default function App() {
           { name: 'Others', rows: others?.rows || [] },
         ],
       };
+    }
+
+    if (!workbook) {
+      const hasLocalFinal =
+        stageStored.mobiles || stageStored.landlines || stageStored.others;
+      if (hasLocalFinal) {
+        const [mobiles, landlines, others] = await Promise.all([
+          stageStore.readAllRows('mobiles'),
+          stageStore.readAllRows('landlines'),
+          stageStore.readAllRows('others'),
+        ]);
+        const finalHeadersResolved = finalHeaders.length ? finalHeaders : headers;
+        workbook = {
+          headers: finalHeadersResolved,
+          fileBaseName: sourceBaseName || 'pipeline',
+          sheets: [
+            { name: 'Mobiles', rows: mobiles },
+            { name: 'Landlines', rows: landlines },
+            { name: 'Others', rows: others },
+          ],
+        };
+      }
     }
 
     if (!workbook) return;
@@ -3230,7 +3785,18 @@ export default function App() {
     downloadBlob(blob, filename);
 
     addLog(`Downloaded: ${filename}`, 'success');
-  }, [addLog, fetchStageFromSheets, finalWorkbook, headers, sheetAutoClear, sheetSyncReady, sourceBaseName]);
+  }, [
+    addLog,
+    fetchStageFromSheets,
+    finalHeaders,
+    finalWorkbook,
+    headers,
+    sheetAutoClear,
+    sheetSyncReady,
+    sourceBaseName,
+    stageStore,
+    stageStored,
+  ]);
 
   /**
    * ============================================================
@@ -3263,6 +3829,9 @@ export default function App() {
   const finalWorkbookAvailable =
     !sheetAutoClear &&
     (Boolean(finalWorkbook) ||
+      stageCounts.mobiles > 0 ||
+      stageCounts.landlines > 0 ||
+      stageCounts.others > 0 ||
       (sheetSyncReady &&
         (sheetStageAvailability.mobiles || sheetStageAvailability.landlines || sheetStageAvailability.others)));
 
@@ -3440,6 +4009,7 @@ export default function App() {
                 dedupRows={dedupRows}
                 purifiedRows={purifiedRows}
                 filteredRows={filteredRows}
+                stageCounts={stageCounts}
                 dedupColumn={dedupColumn}
                 filterColumn={filterColumn}
                 finalWorkbookAvailable={finalWorkbookAvailable}
