@@ -202,6 +202,25 @@ const PRESET_FILTER_COLUMN = 'snapshot/page_categories/0';
 const PRESET_URL_COLUMN = 'snapshot/page_profile_uri';
 const PRESET_MATCH_MODE = 'contains'; // Contains
 
+const PIPELINE_ALLOWED_COLUMNS = [
+  'ad_archive_id',
+  'collation_count',
+  'end_date',
+  'entity_type',
+  'impressions_with_index/impressions_text',
+  'page_id',
+  'page_name',
+  'publisher_platform/0',
+  'publisher_platform/1',
+  'snapshot/body/text',
+  'snapshot/page_categories/0',
+  'snapshot/page_like_count',
+  'snapshot/page_name',
+  'snapshot/page_profile_uri',
+  'snapshot/title',
+  'start_date',
+];
+
 /**
  * ============================================================
  *  WATCHDOG ACTOR (PER PROVIDED APP)
@@ -1342,7 +1361,7 @@ export default function App() {
    *  - Functionality preserved from provided Watchdog app
    * ============================================================
    */
-  const runWatchdogAndExportRows = useCallback(async () => {
+  const runWatchdogAndProcessRows = useCallback(async () => {
     if (!watchdogMinDate) throw new Error('Minimum Date is CRITICAL. Please set it.');
     if (!watchdogKeywordsInput.trim()) throw new Error('Please enter at least one keyword.');
 
@@ -1366,6 +1385,8 @@ export default function App() {
       startTime: null,
       itemCount: 0,
       dateViolationStreak: 0,
+      processed: false,
+      exportQueued: false,
     }));
 
     setWatchdogJobsSafe(newJobs);
@@ -1381,6 +1402,128 @@ export default function App() {
     }));
 
     addLog(`Bulk initial pull started. Queue size: ${newJobs.length}. Concurrency: ${watchdogMaxConcurrency}`, 'success');
+
+    const totalJobs = newJobs.length;
+
+    setHeaders(PIPELINE_ALLOWED_COLUMNS);
+    setSourceBaseName(`watchdog_export_${new Date().toISOString().slice(0, 10)}`);
+
+    const masterInputRows = [];
+    const masterDedupRows = [];
+    const masterPurifiedRows = [];
+    const masterFilteredRows = [];
+    const masterDedupSet = new Set();
+
+    let totalInputRows = 0;
+    let totalDedupRemoved = 0;
+    let totalPurifierRemoved = 0;
+    let totalMasterFilterRemoved = 0;
+    let processedCount = 0;
+    let processingError = null;
+
+    const matchesFilter = (rowObj) => {
+      const raw = safeToString(rowObj[filterColumn]).trim();
+      const val = raw.toLowerCase();
+      if (matchMode === 'contains') {
+        const keywordsList = Array.from(allowSet);
+        return keywordsList.some((k) => k && val.includes(k));
+      }
+      return allowSet.has(val);
+    };
+
+    const processDatasetRows = async (job) => {
+      if (stopRef.current) return;
+      setStage('dedup');
+      setStatus(`Processing "${job.keyword}" (trim + dedup + filter)...`);
+      setWatchdogExporting(true);
+      setWatchdogExportStatus(`Processing dataset for "${job.keyword}"...`);
+      addLog(`Processing dataset for "${job.keyword}"...`, 'info');
+
+      const DATA_PAGE_SIZE = 200;
+      const localSeen = new Set();
+
+      try {
+        for (let offset = 0; ; offset += DATA_PAGE_SIZE) {
+          if (stopRef.current) break;
+          const res = await apifyRequest({
+            path: `/v2/datasets/${job.datasetId}/items`,
+            query: { clean: false, limit: DATA_PAGE_SIZE, offset },
+          });
+          if (!res.ok) break;
+          const items = res.data;
+          if (!Array.isArray(items) || items.length === 0) break;
+
+          for (const item of items) {
+            const flattened = flattenRecord(item);
+            const rowObj = {};
+
+            for (const fieldName of PIPELINE_ALLOWED_COLUMNS) {
+              const val = flattened[fieldName] ?? '';
+              rowObj[fieldName] = safeToString(val).replace(/\r?\n/g, ' ');
+            }
+
+            totalInputRows += 1;
+            masterInputRows.push(rowObj);
+
+            const key = safeToString(rowObj[dedupColumn]).trim();
+            if (localSeen.has(key) || masterDedupSet.has(key)) {
+              totalDedupRemoved += 1;
+              continue;
+            }
+
+            localSeen.add(key);
+            masterDedupRows.push(rowObj);
+
+            if (rowHasForeignScript(rowObj)) {
+              totalPurifierRemoved += 1;
+              continue;
+            }
+
+            masterPurifiedRows.push(rowObj);
+
+            if (!matchesFilter(rowObj)) {
+              totalMasterFilterRemoved += 1;
+              continue;
+            }
+
+            masterFilteredRows.push(rowObj);
+            masterDedupSet.add(key);
+          }
+
+          if (items.length < DATA_PAGE_SIZE) break;
+        }
+      } catch (error) {
+        processingError = error;
+        throw error;
+      }
+
+      processedCount += 1;
+      setWatchdogExportStatus(`Processed ${processedCount}/${totalJobs} datasets...`);
+      setProgress(25 + (processedCount / Math.max(1, totalJobs)) * 30);
+
+      setStats((s) => ({
+        ...s,
+        watchdogExportedRows: totalInputRows,
+        inputRows: totalInputRows,
+        dedupRemoved: totalDedupRemoved,
+        afterDedup: masterDedupRows.length,
+        purifierRemoved: totalPurifierRemoved,
+        afterPurify: masterPurifiedRows.length,
+        masterFilterRemoved: totalMasterFilterRemoved,
+        afterMasterFilter: masterFilteredRows.length,
+      }));
+
+      setRows([...masterInputRows]);
+      setDedupRows([...masterDedupRows]);
+      setPurifiedRows([...masterPurifiedRows]);
+      setFilteredRows([...masterFilteredRows]);
+    };
+
+    let processingChain = Promise.resolve();
+
+    const enqueueProcessing = (job) => {
+      processingChain = processingChain.then(() => processDatasetRows(job));
+    };
 
     // Helper: retry logic (preserved)
     const handleRetryOrFail = async (job, reason) => {
@@ -1634,23 +1777,33 @@ export default function App() {
         }
       }
 
+      await checkActiveJobs();
+
       // Progress update (UI-only)
-      const doneCount = jobsNow.filter((j) => ['SUCCEEDED', 'FAILED', 'ABORTED'].includes(j.status)).length;
-      const total = Math.max(1, jobsNow.length);
+      const jobsLatest = watchdogJobsRef.current;
+      const doneCount = jobsLatest.filter((j) => ['SUCCEEDED', 'FAILED', 'ABORTED'].includes(j.status)).length;
+      const total = Math.max(1, jobsLatest.length);
       const pct = (doneCount / total) * 25; // 0 -> 25
       setProgress(Math.min(25, Math.max(0, pct)));
 
-      // Done condition matches original: no active + no pending + no retry + jobs exist
-      const activeNow = watchdogJobsRef.current.filter((j) => j.status === 'RUNNING' || j.status === 'STARTING').length;
-      const retryNow = watchdogJobsRef.current.filter((j) => j.status === 'PENDING_RETRY').length;
-      const pendingNow = watchdogJobsRef.current.filter((j) => j.status === 'PENDING').length;
+      const newlySucceeded = jobsLatest.filter(
+        (j) => j.status === 'SUCCEEDED' && j.datasetId && !j.exportQueued
+      );
 
-      if (activeNow === 0 && retryNow === 0 && pendingNow === 0 && watchdogJobsRef.current.length > 0) {
+      for (const job of newlySucceeded) {
+        updateWatchdogJob(job.id, { exportQueued: true });
+        enqueueProcessing(job);
+      }
+
+      // Done condition matches original: no active + no pending + no retry + jobs exist
+      const activeNow = jobsLatest.filter((j) => j.status === 'RUNNING' || j.status === 'STARTING').length;
+      const retryNow = jobsLatest.filter((j) => j.status === 'PENDING_RETRY').length;
+      const pendingNow = jobsLatest.filter((j) => j.status === 'PENDING').length;
+
+      if (activeNow === 0 && retryNow === 0 && pendingNow === 0 && jobsLatest.length > 0) {
         addLog('All bulk initial pull jobs completed.', 'success');
         break;
       }
-
-      await checkActiveJobs();
 
       const dynamicInterval = Math.max(3000, activeNow * 200);
       await sleep(dynamicInterval);
@@ -1671,134 +1824,17 @@ export default function App() {
       watchdogAborted: aborted,
     }));
 
-    // -------- EXPORT (Single CSV internally; continues pipeline) --------
-    setWatchdogExporting(true);
-    setWatchdogExportStatus('Analyzing schema...');
-    addLog('Bulk initial pull export: analyzing schema...', 'system');
-
-    const jobsWithData = finalJobs.filter((j) => j.datasetId);
-    if (jobsWithData.length === 0) {
-      setWatchdogExporting(false);
-      setWatchdogExportStatus('');
-      throw new Error('No datasets found to export.');
-    }
-
-    // Phase 1: Discover headers (double-pass strategy) — preserved
-    const masterHeaders = new Set();
-    const SCHEMA_BATCH = 2;
-    const SCHEMA_PAGE_SIZE = 25;
-    const SCHEMA_ITEM_LIMIT = 100;
-
-    for (let i = 0; i < jobsWithData.length; i += SCHEMA_BATCH) {
-      const batch = jobsWithData.slice(i, i + SCHEMA_BATCH);
-
-      await Promise.all(
-        batch.map(async (job) => {
-          try {
-            for (let offset = 0; offset < SCHEMA_ITEM_LIMIT; offset += SCHEMA_PAGE_SIZE) {
-              if (stopRef.current) break;
-              const res = await apifyRequest({
-                path: `/v2/datasets/${job.datasetId}/items`,
-                query: { limit: SCHEMA_PAGE_SIZE, offset, clean: false },
-              });
-              if (!res.ok) break;
-              const items = res.data;
-              if (Array.isArray(items) && items.length > 0) {
-                items.forEach((item) => {
-                  const flattened = flattenRecord(item);
-                  Object.keys(flattened).forEach((k) => masterHeaders.add(k));
-                });
-              }
-              if (!Array.isArray(items) || items.length < SCHEMA_PAGE_SIZE) break;
-            }
-          } catch {
-            /* ignore */
-          }
-        })
-      );
-
-      if (stopRef.current) break;
-    }
-
-    masterHeaders.add('keyword');
-    const exportedHeaders = Array.from(masterHeaders);
-
-    setWatchdogExportStatus('Fetching dataset items...');
-    addLog(`Bulk initial pull export: fetching datasets (${jobsWithData.length})...`, 'system');
-
-    // Phase 2: Stream fetch (memory-safe pattern preserved; single CSV internal)
-    const DATA_BATCH = 2;
-    const DATA_PAGE_SIZE = 200;
-    const allRows = [];
-    let processedCount = 0;
-
-    for (let i = 0; i < jobsWithData.length; i += DATA_BATCH) {
-      const batch = jobsWithData.slice(i, i + DATA_BATCH);
-
-      for (let jobIndex = 0; jobIndex < batch.length; jobIndex += 1) {
-        const job = batch[jobIndex];
-        try {
-          for (let offset = 0; ; offset += DATA_PAGE_SIZE) {
-            if (stopRef.current) break;
-            const res = await apifyRequest({
-              path: `/v2/datasets/${job.datasetId}/items`,
-              query: { clean: false, limit: DATA_PAGE_SIZE, offset },
-            });
-            if (!res.ok) break;
-            const items = res.data;
-            if (!Array.isArray(items) || items.length === 0) break;
-
-            for (const item of items) {
-              const rowObj = {};
-              // Inject keyword column (preserved)
-              const enriched = { ...item, keyword: job.keyword };
-              const flattened = flattenRecord(enriched);
-
-              for (const fieldName of exportedHeaders) {
-                const val = flattened[fieldName] ?? '';
-                rowObj[fieldName] = safeToString(val).replace(/\r?\n/g, ' ');
-              }
-
-              allRows.push(rowObj);
-            }
-
-            if (items.length < DATA_PAGE_SIZE) break;
-          }
-        } catch {
-          /* ignore */
-        }
-      }
-
-      processedCount += batch.length;
-      setWatchdogExportStatus(
-        `Processed ${processedCount}/${jobsWithData.length} datasets...`
-      );
-      // UI progress export 25 -> 35
-      setProgress(25 + (processedCount / Math.max(1, jobsWithData.length)) * 10);
-
-      if (stopRef.current) break;
-    }
+    await processingChain;
 
     setWatchdogExporting(false);
     setWatchdogExportStatus('');
 
-    if (stopRef.current) throw new Error('Stopped by user.');
-    if (allRows.length === 0) throw new Error('Bulk initial pull export produced 0 rows.');
+    if (processingError) throw processingError;
+    if (masterFilteredRows.length === 0) throw new Error('Bulk initial pull export produced 0 rows.');
 
-    // Store exported "CSV" (internally) as pipeline input
-    setHeaders(exportedHeaders);
-    setRows(allRows);
-    setSourceBaseName(`watchdog_export_${new Date().toISOString().slice(0, 10)}`);
+    addLog(`Bulk initial pull export complete: ${masterFilteredRows.length} row(s).`, 'success');
 
-    setStats((s) => ({
-      ...s,
-      watchdogExportedRows: allRows.length,
-      inputRows: allRows.length,
-    }));
-
-    addLog(`Bulk initial pull export complete: ${allRows.length} row(s).`, 'success');
-
-    return { exportedHeaders, allRows };
+    return { exportedHeaders: PIPELINE_ALLOWED_COLUMNS, allRows: masterFilteredRows };
   }, [
     abortWatchdogJob,
     addLog,
@@ -1810,6 +1846,9 @@ export default function App() {
     dateViolationStreakLimit,
     filterColumn,
     memory,
+    matchMode,
+    setStage,
+    setStatus,
     setWatchdogJobsSafe,
     updateWatchdogJob,
     urlColumn,
@@ -2051,6 +2090,7 @@ export default function App() {
     setFinalWorkbook(null);
     setLogs([]);
     setBatchProgress({ total: 0, completed: 0, active: 0 });
+    setRows([]);
     setDedupRows([]);
     setPurifiedRows([]);
     setFilteredRows([]);
@@ -2072,199 +2112,19 @@ export default function App() {
       // -----------------------------
       // 0) WATCHDOG BULK RUN + INTERNAL EXPORT
       // -----------------------------
-      const { allRows, exportedHeaders } = await runWatchdogAndExportRows();
+      const missingRequiredColumns = [dedupColumn, filterColumn, urlColumn].filter(
+        (column) => !PIPELINE_ALLOWED_COLUMNS.includes(column)
+      );
+      if (missingRequiredColumns.length) {
+        throw new Error(`Required column(s) missing from allowed export list: ${missingRequiredColumns.join(', ')}`);
+      }
+
+      const { allRows } = await runWatchdogAndProcessRows();
       let workingRows = allRows;
-      let pipelineHeaders = exportedHeaders;
 
       if (stopRef.current) throw new Error('Stopped by user.');
 
-      // Validate column settings exist (settings are preset; can be changed in Settings page)
-      // (This is runtime validation only; does not modify settings.)
-      const hasDedup = workingRows.length
-        ? Object.prototype.hasOwnProperty.call(workingRows[0], dedupColumn)
-        : false;
-      const hasFilter = workingRows.length
-        ? Object.prototype.hasOwnProperty.call(workingRows[0], filterColumn)
-        : false;
-      const hasUrl = workingRows.length ? Object.prototype.hasOwnProperty.call(workingRows[0], urlColumn) : false;
-
-      if (!hasDedup) throw new Error(`Deduplicate column not found in bulk initial pull export: "${dedupColumn}"`);
-      if (!hasFilter) throw new Error(`Category Filter column not found in bulk initial pull export: "${filterColumn}"`);
-      if (!hasUrl) throw new Error(`URL column not found in bulk initial pull export: "${urlColumn}"`);
-
-      // -----------------------------
-      // 1) DEDUPLICATE
-      // -----------------------------
-      setStage('dedup');
-      setStatus('Deduplicating CSV...');
-      setProgress(35);
-
-      const keywordColumn = 'keyword';
-      const keywordColumns = getKeywordColumns(workingRows);
-      const keywordColumnsToUse = keywordColumns.length ? keywordColumns : [keywordColumn];
-      const seen = new Set();
-      const deduped = [];
-      const dedupedMap = new Map();
-      let maxKeywords = 0;
-      let dupRemoved = 0;
-
-      const dedupChunk = 400;
-      for (let i = 0; i < workingRows.length; i += 1) {
-        if (stopRef.current) throw new Error('Stopped by user.');
-        const row = workingRows[i];
-        const key = safeToString(row[dedupColumn]).trim();
-        const rowKeywords = extractKeywordsFromRow(row, keywordColumnsToUse);
-        if (seen.has(key)) {
-          dupRemoved++;
-          const existing = dedupedMap.get(key);
-          if (existing && rowKeywords.length) {
-            rowKeywords.forEach((keyword) => existing.keywords.add(keyword));
-          }
-        } else {
-          seen.add(key);
-          const keywordSet = new Set();
-          rowKeywords.forEach((keyword) => keywordSet.add(keyword));
-          dedupedMap.set(key, { row, keywords: keywordSet });
-        }
-
-        if (i % dedupChunk === 0) {
-          await sleep(0);
-          const pct = 35 + (i / Math.max(1, workingRows.length)) * 4; // 35 -> 39
-          setProgress(Math.min(39, Math.max(35, pct)));
-        }
-      }
-
-      for (const { row, keywords } of dedupedMap.values()) {
-        const list = Array.from(keywords);
-        maxKeywords = Math.max(maxKeywords, list.length);
-        row[keywordColumn] = list[0] || '';
-        for (let i = 1; i < list.length; i += 1) {
-          row[`${keywordColumn}_${i + 1}`] = list[i];
-        }
-        deduped.push(row);
-      }
-      if (maxKeywords > 1) {
-        const baseHeaders = pipelineHeaders.filter(
-          (header) => header !== keywordColumn && !header.startsWith(`${keywordColumn}_`)
-        );
-        const keywordHeaders = Array.from({ length: maxKeywords }, (_, idx) =>
-          idx === 0 ? keywordColumn : `${keywordColumn}_${idx + 1}`
-        );
-        pipelineHeaders = [...baseHeaders, ...keywordHeaders];
-        setHeaders(pipelineHeaders);
-      }
-
-      setStats((s) => ({
-        ...s,
-        dedupRemoved: dupRemoved,
-        afterDedup: deduped.length,
-      }));
-      setDedupRows(deduped);
-
-      addLog(`Deduplicator: removed ${dupRemoved} duplicates (by "${dedupColumn}").`, dupRemoved ? 'warning' : 'success');
-
-      workingRows = deduped;
-
-      // -----------------------------
-      // 2) PURIFY
-      // -----------------------------
-      setStage('purify');
-      setStatus('Purifying (removing foreign script rows)...');
-      setProgress(40);
-
-      const purified = [];
-      let purifierRemoved = 0;
-      const purifyChunk = 250;
-
-      for (let i = 0; i < deduped.length; i++) {
-        if (stopRef.current) throw new Error('Stopped by user.');
-        const rowObj = deduped[i];
-        if (rowHasForeignScript(rowObj)) purifierRemoved++;
-        else purified.push(rowObj);
-
-        if (i % purifyChunk === 0) {
-          await sleep(0);
-          const pct = 40 + (i / Math.max(1, deduped.length)) * 8; // 40 -> 48
-          setProgress(Math.min(48, Math.max(40, pct)));
-        }
-      }
-
-      setStats((s) => ({
-        ...s,
-        purifierRemoved,
-        afterPurify: purified.length,
-      }));
-      setPurifiedRows(purified);
-
-      addLog(
-        `Foreign Language Detector: removed ${purifierRemoved} row(s) containing foreign script.`,
-        purifierRemoved ? 'warning' : 'success'
-      );
-
-      workingRows = purified;
-
-      // -----------------------------
-      // 3) MASTER FILTER (HARD-CODED KEYWORDS)
-      // -----------------------------
-      setStage('filter');
-      setStatus('Category Filtering (hard-coded keywords)...');
-      setProgress(48);
-
-      const kept = [];
-      let masterFilterRemoved = 0;
-      const filterChunk = 250;
-
-      if (matchMode === 'contains') {
-        const keywords = Array.from(allowSet);
-        for (let i = 0; i < workingRows.length; i++) {
-          if (stopRef.current) throw new Error('Stopped by user.');
-          const rowObj = workingRows[i];
-          const raw = safeToString(rowObj[filterColumn]).trim();
-          const val = raw.toLowerCase();
-
-          const hit = keywords.some((k) => k && val.includes(k));
-          if (hit) kept.push(rowObj);
-          else masterFilterRemoved++;
-
-          if (i % filterChunk === 0) {
-            await sleep(0);
-            const pct = 48 + (i / Math.max(1, workingRows.length)) * 7; // 48 -> 55
-            setProgress(Math.min(55, Math.max(48, pct)));
-          }
-        }
-      } else {
-        for (let i = 0; i < workingRows.length; i++) {
-          if (stopRef.current) throw new Error('Stopped by user.');
-          const rowObj = workingRows[i];
-          const raw = safeToString(rowObj[filterColumn]).trim();
-          const val = raw.toLowerCase();
-
-          if (allowSet.has(val)) kept.push(rowObj);
-          else masterFilterRemoved++;
-
-          if (i % filterChunk === 0) {
-            await sleep(0);
-            const pct = 48 + (i / Math.max(1, workingRows.length)) * 7; // 48 -> 55
-            setProgress(Math.min(55, Math.max(48, pct)));
-          }
-        }
-      }
-
-      setStats((s) => ({
-        ...s,
-        masterFilterRemoved,
-        afterMasterFilter: kept.length,
-      }));
-      setFilteredRows(kept);
-
-      addLog(
-        `Category Filter: kept ${kept.length}, removed ${masterFilterRemoved} (column "${filterColumn}", mode "${matchMode}").`,
-        kept.length ? 'success' : 'warning'
-      );
-
-      workingRows = kept;
-
-      if (kept.length === 0) {
+      if (!workingRows.length) {
         throw new Error('Category Filter produced 0 rows. Nothing to send to Apify.');
       }
 
@@ -2275,9 +2135,9 @@ export default function App() {
       setStatus('Running Apify batches...');
       setProgress(55);
 
-      const apifyKeywordColumns = getKeywordColumns(kept);
-      const urlKeywordMap = buildUrlKeywordMap(kept, apifyKeywordColumns);
-      const allUrls = urlKeywordMap.size ? Array.from(urlKeywordMap.keys()) : extractUrls(kept);
+      const apifyKeywordColumns = getKeywordColumns(workingRows);
+      const urlKeywordMap = buildUrlKeywordMap(workingRows, apifyKeywordColumns);
+      const allUrls = urlKeywordMap.size ? Array.from(urlKeywordMap.keys()) : extractUrls(workingRows);
       setStats((s) => ({ ...s, urlsForApify: allUrls.length }));
 
       if (!allUrls.length) throw new Error(`No URLs detected in column "${urlColumn}".`);
@@ -2520,19 +2380,16 @@ export default function App() {
   }, [
     abortWatchdogJob,
     addLog,
-    allowSet,
     apifyRequest,
     buildUrlKeywordMap,
     dedupColumn,
     ensureApifyTokenConfigured,
     extractUrls,
     filterColumn,
-    headers,
     getKeywordColumns,
-    matchMode,
     resolveItemUrl,
     runSingleBatch,
-    runWatchdogAndExportRows,
+    runWatchdogAndProcessRows,
     sourceBaseName,
     urlColumn,
     setDedupRows,
