@@ -959,6 +959,13 @@ export default function App() {
   const [filterColumn, setFilterColumn] = useState(PRESET_FILTER_COLUMN);
   const [urlColumn, setUrlColumn] = useState(PRESET_URL_COLUMN);
   const [matchMode, setMatchMode] = useState(PRESET_MATCH_MODE); // exact | contains
+  const [memorySaver, setMemorySaver] = useState(() => {
+    try {
+      return localStorage.getItem('pipeline_memory_saver') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   /**
    * ============================================================
@@ -1031,10 +1038,11 @@ export default function App() {
       localStorage.setItem('pipeline_sheet_prefix', sheetTabPrefix);
       localStorage.setItem('pipeline_sheet_mode', sheetAppendMode);
       localStorage.setItem('pipeline_sheet_auto_clear', String(sheetAutoClear));
+      localStorage.setItem('pipeline_memory_saver', String(memorySaver));
     } catch {
       /* ignore */
     }
-  }, [sheetAppendMode, sheetAutoClear, sheetSpreadsheetId, sheetSyncEnabled, sheetTabPrefix]);
+  }, [memorySaver, sheetAppendMode, sheetAutoClear, sheetSpreadsheetId, sheetSyncEnabled, sheetTabPrefix]);
 
   const sheetsRequest = useCallback(
     async ({ path, method = 'POST', body, accessToken }) => {
@@ -2504,14 +2512,17 @@ export default function App() {
     setStatus('Running Bulk Initial Pull...');
     setProgress(1);
     addLog('--- PIPELINE START ---', 'system');
+    if (memorySaver) {
+      addLog('Memory Saver enabled: processing rows sequentially to reduce crashes.', 'warning');
+    }
 
     try {
       // -----------------------------
       // 0) WATCHDOG BULK RUN + INTERNAL EXPORT
       // -----------------------------
-    const { allRows, exportedHeaders, watchdogSynced } = await runWatchdogAndExportRows();
-    let workingRows = allRows;
-    let pipelineHeaders = exportedHeaders;
+      const { allRows, exportedHeaders, watchdogSynced } = await runWatchdogAndExportRows();
+      let workingRows = allRows;
+      let pipelineHeaders = exportedHeaders;
 
       if (stopRef.current) throw new Error('Stopped by user.');
 
@@ -2545,7 +2556,7 @@ export default function App() {
       let maxKeywords = 0;
       let dupRemoved = 0;
 
-      const dedupChunk = 400;
+      const dedupChunk = memorySaver ? 1 : 400;
       for (let i = 0; i < workingRows.length; i += 1) {
         if (stopRef.current) throw new Error('Stopped by user.');
         const row = workingRows[i];
@@ -2569,6 +2580,11 @@ export default function App() {
           const pct = 35 + (i / Math.max(1, workingRows.length)) * 4; // 35 -> 39
           setProgress(Math.min(39, Math.max(35, pct)));
         }
+      }
+
+      if (memorySaver) {
+        workingRows.length = 0;
+        setRows([]);
       }
 
       if (sheetSyncReady && sheetAutoClear && watchdogSynced) {
@@ -2602,7 +2618,11 @@ export default function App() {
         dedupRemoved: dupRemoved,
         afterDedup: deduped.length,
       }));
-      setDedupRows(deduped);
+      if (memorySaver) {
+        setDedupRows([]);
+      } else {
+        setDedupRows(deduped);
+      }
 
       const dedupSynced = await syncStageToSheets({
         stageKey: 'deduplicated',
@@ -2627,7 +2647,7 @@ export default function App() {
 
       const purified = [];
       let purifierRemoved = 0;
-      const chunk = 250;
+      const chunk = memorySaver ? 1 : 250;
 
       for (let i = 0; i < deduped.length; i++) {
         if (stopRef.current) throw new Error('Stopped by user.');
@@ -2647,7 +2667,11 @@ export default function App() {
         purifierRemoved,
         afterPurify: purified.length,
       }));
-      setPurifiedRows(purified);
+      if (memorySaver) {
+        setPurifiedRows([]);
+      } else {
+        setPurifiedRows(purified);
+      }
 
       const purifiedSynced = await syncStageToSheets({
         stageKey: 'purified',
@@ -2661,6 +2685,11 @@ export default function App() {
       );
 
       if (sheetSyncReady && sheetAutoClear && purifiedSynced) {
+        deduped.length = 0;
+        setDedupRows([]);
+      }
+
+      if (memorySaver) {
         deduped.length = 0;
         setDedupRows([]);
       }
@@ -2718,7 +2747,11 @@ export default function App() {
         masterFilterRemoved,
         afterMasterFilter: kept.length,
       }));
-      setFilteredRows(kept);
+      if (memorySaver) {
+        setFilteredRows([]);
+      } else {
+        setFilteredRows(kept);
+      }
 
       const filterSynced = await syncStageToSheets({
         stageKey: 'master_filter',
@@ -2732,6 +2765,11 @@ export default function App() {
       );
 
       if (sheetSyncReady && sheetAutoClear && filterSynced) {
+        purified.length = 0;
+        setPurifiedRows([]);
+      }
+
+      if (memorySaver) {
         purified.length = 0;
         setPurifiedRows([]);
       }
@@ -2757,6 +2795,11 @@ export default function App() {
       if (!allUrls.length) throw new Error(`No URLs detected in column "${urlColumn}".`);
 
       if (sheetSyncReady && sheetAutoClear && filterSynced) {
+        workingRows.length = 0;
+        setFilteredRows([]);
+      }
+
+      if (memorySaver) {
         workingRows.length = 0;
         setFilteredRows([]);
       }
@@ -2907,7 +2950,7 @@ export default function App() {
       const landlineList = [];
       const otherList = [];
 
-      const sortChunk = 250;
+      const sortChunk = memorySaver ? 1 : 250;
 
       for (let idx = 0; idx < allItems.length; idx++) {
         if (stopRef.current) throw new Error('Stopped by user.');
@@ -2951,6 +2994,14 @@ export default function App() {
           const pct = 92 + (idx / Math.max(1, allItems.length)) * 6; // 92 -> 98
           setProgress(Math.min(98, Math.max(92, pct)));
         }
+
+        if (memorySaver) {
+          allItems[idx] = null;
+        }
+      }
+
+      if (memorySaver) {
+        allItems.length = 0;
       }
 
       setStats((s) => ({
@@ -3030,6 +3081,7 @@ export default function App() {
     sourceBaseName,
     syncStageToSheets,
     urlColumn,
+    memorySaver,
     setDedupRows,
     setFilteredRows,
     setPurifiedRows,
@@ -3235,6 +3287,8 @@ export default function App() {
                 presetFilterColumn={PRESET_FILTER_COLUMN}
                 presetUrlColumn={PRESET_URL_COLUMN}
                 presetMatchMode={PRESET_MATCH_MODE}
+                memorySaver={memorySaver}
+                setMemorySaver={setMemorySaver}
                 sheetSyncEnabled={sheetSyncEnabled}
                 sheetTabPrefix={sheetTabPrefix}
                 setSheetTabPrefix={setSheetTabPrefix}
