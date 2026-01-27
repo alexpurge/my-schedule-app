@@ -33,10 +33,8 @@ const DashboardPanel = ({
   filteredOutTotal,
   keywordCount,
   downloadCsvSnapshot,
-  rows,
-  dedupRows,
-  purifiedRows,
   filteredRows,
+  prePullReady,
   dedupColumn,
   filterColumn,
   finalWorkbookAvailable,
@@ -47,13 +45,6 @@ const DashboardPanel = ({
   watchdogJobs,
   abortWatchdogJob,
 }) => {
-  const stageReady = {
-    watchdog: rows.length > 0,
-    deduplicated: dedupRows.length > 0,
-    purified: purifiedRows.length > 0,
-    master_filter: filteredRows.length > 0,
-  };
-
   return (
     <div className="grid">
     {/* LEFT COLUMN */}
@@ -324,44 +315,22 @@ const DashboardPanel = ({
               <div className="breakLine">
                 <span>Keywords</span> <span className="mono">{stats.watchdogKeywords}</span>
               </div>
-              <div className="breakLine" style={{ marginTop: 8 }}>
-                <span>Jobs</span>
-                <span className="mono">
-                  {stats.watchdogSucceeded} ok / {stats.watchdogFailed} fail / {stats.watchdogAborted} aborted
-                </span>
-              </div>
-              <button
-                className="btn btnSmall"
-                type="button"
-                style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
-                onClick={() => downloadCsvSnapshot('watchdog', rows)}
-                disabled={!stageReady.watchdog}
-                title="Download bulk initial pull export CSV"
-              >
-                <Download size={14} />
-                Download CSV
-              </button>
+            <div className="breakLine" style={{ marginTop: 8 }}>
+              <span>Jobs</span>
+              <span className="mono">
+                {stats.watchdogSucceeded} ok / {stats.watchdogFailed} fail / {stats.watchdogAborted} aborted
+              </span>
             </div>
+          </div>
 
-            <div className="breakItem">
-              <div className="breakH">Deduplicator</div>
+          <div className="breakItem">
+            <div className="breakH">Deduplicator</div>
               <div className="breakLine">
                 <span>Removed</span> <span className="mono">{stats.dedupRemoved}</span>
               </div>
               <div className="breakLine" style={{ marginTop: 8 }}>
                 <span>Remaining</span> <span className="mono">{stats.afterDedup}</span>
               </div>
-              <button
-                className="btn btnSmall"
-                type="button"
-                style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
-                onClick={() => downloadCsvSnapshot('deduplicated', dedupRows)}
-                disabled={!stageReady.deduplicated}
-                title="Download deduplicated CSV"
-              >
-                <Download size={14} />
-                Download CSV
-              </button>
             </div>
 
             <div className="breakItem">
@@ -372,17 +341,6 @@ const DashboardPanel = ({
               <div className="breakLine" style={{ marginTop: 8 }}>
                 <span>Remaining</span> <span className="mono">{stats.afterPurify}</span>
               </div>
-              <button
-                className="btn btnSmall"
-                type="button"
-                style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
-                onClick={() => downloadCsvSnapshot('purified', purifiedRows)}
-                disabled={!stageReady.purified}
-                title="Download purified CSV"
-              >
-                <Download size={14} />
-                Download CSV
-              </button>
             </div>
 
             <div className="breakItem">
@@ -393,13 +351,24 @@ const DashboardPanel = ({
               <div className="breakLine" style={{ marginTop: 8 }}>
                 <span>Remaining</span> <span className="mono">{stats.afterMasterFilter}</span>
               </div>
+            </div>
+
+            <div className="breakItem">
+              <div className="breakH">Pre-Pulled Master</div>
+              <div className="breakLine">
+                <span>Rows</span> <span className="mono">{stats.afterMasterFilter}</span>
+              </div>
+              <div className="breakLine" style={{ marginTop: 8 }}>
+                <span>Status</span>
+                <span className="mono">{prePullReady ? 'Ready' : 'Pending'}</span>
+              </div>
               <button
                 className="btn btnSmall"
                 type="button"
                 style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
-                onClick={() => downloadCsvSnapshot('master_filter', filteredRows)}
-                disabled={!stageReady.master_filter}
-                title="Download category filter CSV"
+                onClick={() => downloadCsvSnapshot('pre_pulled_master', filteredRows)}
+                disabled={!prePullReady}
+                title="Download pre-pulled master CSV"
               >
                 <Download size={14} />
                 Download CSV
