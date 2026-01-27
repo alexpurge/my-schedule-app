@@ -140,16 +140,22 @@ app.use((req, res, next) => {
   next();
 });
 
+const getApifyToken = (req) => process.env.APIFY_API_KEY || req?.get("x-apify-token");
+
+const getApifyTokenSource = (req) => {
+  if (process.env.APIFY_API_KEY) return "server";
+  if (req?.get("x-apify-token")) return "client";
+  return "unknown";
+};
+
 app.get("/apify/token", (req, res) => {
-  const token = process.env.APIFY_API_KEY;
+  const token = getApifyToken(req);
   if (!token) {
     res.status(500).send("Apify token is not configured on the server.");
     return;
   }
-  res.json({ configured: true });
+  res.json({ configured: true, source: getApifyTokenSource(req) });
 });
-
-const getApifyToken = () => process.env.APIFY_API_KEY;
 
 const logMissingApifyToken = () => {
   console.error("Missing APIFY_API_KEY");
@@ -162,7 +168,7 @@ app.post("/apify/request", async (req, res) => {
     return;
   }
 
-  const token = getApifyToken();
+  const token = getApifyToken(req);
   if (!token) {
     logMissingApifyToken();
     res.status(500).send("Apify token is not configured on the server.");

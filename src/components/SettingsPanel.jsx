@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, RefreshCw, Settings } from 'lucide-react';
+import { AlertTriangle, Key, RefreshCw, Settings } from 'lucide-react';
 
 const ColumnField = ({ label, value, onChange, placeholder, headers, isRunning }) => {
   const canDropdown = headers && headers.length > 0;
@@ -50,6 +50,11 @@ const SettingsPanel = ({
   presetFilterColumn,
   presetUrlColumn,
   presetMatchMode,
+  apifyToken,
+  setApifyToken,
+  apifyTokenStatus,
+  watchdogActorId,
+  setWatchdogActorId,
 }) => (
   <div className="grid">
     <div className="leftCol" style={{ gridColumn: 'span 12' }}>
@@ -126,6 +131,63 @@ const SettingsPanel = ({
             <RefreshCw size={16} />
             Reset to Presets
           </button>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="cardHeader">
+          <div className="cardHeaderTitle">
+            <Key size={16} style={{ color: 'var(--color-primary)' }} />
+            Apify Connection
+          </div>
+          <div className="cardHeaderTitle" style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
+            Token + Actor configuration
+          </div>
+        </div>
+
+        <div className="cardBody">
+          <div style={{ marginBottom: 14 }}>
+            <label className="label">Apify API token</label>
+            <input
+              className="input"
+              type="password"
+              value={apifyToken}
+              onChange={(e) => setApifyToken(e.target.value.trim())}
+              disabled={isRunning}
+              placeholder="apify_api_token_..."
+              autoComplete="off"
+            />
+            <div className="smallNote">
+              {apifyTokenStatus?.checked ? (
+                apifyTokenStatus.ok ? (
+                  <span>
+                    Token status: Connected ({apifyTokenStatus.source === 'client' ? 'local token' : 'server token'})
+                  </span>
+                ) : (
+                  <span>Token status: {apifyTokenStatus.message || 'Not configured'}</span>
+                )
+              ) : (
+                <span>Token status: Checking…</span>
+              )}
+            </div>
+            <div className="smallNote" style={{ marginTop: 6 }}>
+              If the server is missing a token, this local token will be used for requests from your browser.
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 0 }}>
+            <label className="label">Watchdog Actor ID</label>
+            <input
+              className="input"
+              value={watchdogActorId}
+              onChange={(e) => setWatchdogActorId(e.target.value.trim())}
+              disabled={isRunning}
+              placeholder="igolaizola~facebook-ad-library-scraper"
+            />
+            <div className="smallNote" style={{ marginTop: 6 }}>
+              Use your Apify actor ID or actor name (e.g. igolaizola~facebook-ad-library-scraper).
+            </div>
+          </div>
         </div>
       </div>
 

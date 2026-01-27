@@ -207,7 +207,7 @@ const PRESET_MATCH_MODE = 'contains'; // Contains
  *  WATCHDOG ACTOR (PER PROVIDED APP)
  * ============================================================
  */
-const WATCHDOG_DEFAULT_ACTOR_ID = 'bo5X18oGenWEV9vVo';
+const WATCHDOG_DEFAULT_ACTOR_ID = 'igolaizola~facebook-ad-library-scraper';
 
 /**
  * ============================================================
@@ -880,33 +880,136 @@ export default function App() {
    * ============================================================
    */
   const [memory, setMemory] = useState(128);
-
-  const apifyRequest = useCallback(async ({ path, method = 'GET', query, body }) => {
-    const res = await fetch('/apify/request', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        path,
-        method,
-        query,
-        body,
-      }),
-    });
-
-    const contentType = res.headers.get('content-type') || '';
-    let payload = null;
-    if (contentType.includes('application/json')) {
-      try {
-        payload = await res.json();
-      } catch {
-        payload = null;
-      }
-    } else {
-      payload = await res.text();
+  const [apifyToken, setApifyToken] = useState(() => {
+    try {
+      return localStorage.getItem('apify_api_token') || '';
+    } catch {
+      return '';
     }
-    return { ok: res.ok, status: res.status, data: payload };
+  });
+
+  useEffect(() => {
+    try {
+      if (apifyToken) {
+        localStorage.setItem('apify_api_token', apifyToken);
+      } else {
+        localStorage.removeItem('apify_api_token');
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [apifyToken]);
+
+  const apifyRequest = useCallback(
+    async ({ path, method = 'GET', query, body }) => {
+      try {
+        const res = await fetch('/apify/request', {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apifyToken ? { 'x-apify-token': apifyToken } : {}),
+          },
+          body: JSON.stringify({
+            path,
+            method,
+            query,
+            body,
+          }),
+        });
+
+        const contentType = res.headers.get('content-type') || '';
+        let payload = null;
+        if (contentType.includes('application/json')) {
+          try {
+            payload = await res.json();
+          } catch {
+            payload = null;
+          }
+        } else {
+          payload = await res.text();
+        }
+        return { ok: res.ok, status: res.status, data: payload };
+      } catch (error) {
+        return {
+          ok: false,
+          status: 0,
+          data: { error: error instanceof Error ? error.message : 'Network error.' },
+        };
+      }
+    },
+    [apifyToken]
+  );
+
+  const formatApifyError = useCallback((response) => {
+    if (!response) return 'Unknown error.';
+    if (typeof response.data === 'string') return response.data;
+    if (response.data?.error?.message) return response.data.error.message;
+    if (response.data?.error) return String(response.data.error);
+    if (response.data) {
+      try {
+        return JSON.stringify(response.data);
+      } catch {
+        return 'Unexpected response.';
+      }
+    }
+    return 'Unexpected response.';
   }, []);
+
+  const [apifyTokenStatus, setApifyTokenStatus] = useState({
+    checked: false,
+    ok: false,
+    source: null,
+    message: '',
+  });
+
+  const ensureApifyTokenConfigured = useCallback(async () => {
+    try {
+      const res = await fetch('/apify/token', {
+        credentials: 'include',
+        headers: apifyToken ? { 'x-apify-token': apifyToken } : {},
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        return { ok: false, message: text || 'Apify token is not configured.' };
+      }
+      const data = await res.json().catch(() => ({}));
+      return { ok: true, source: data.source || 'server' };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : 'Unable to reach the server to verify Apify token.',
+      };
+    }
+  }, [apifyToken]);
+
+  useEffect(() => {
+    if (!authState.authenticated) return;
+    let cancelled = false;
+    const refreshStatus = async () => {
+      const result = await ensureApifyTokenConfigured();
+      if (cancelled) return;
+      if (result.ok) {
+        setApifyTokenStatus({
+          checked: true,
+          ok: true,
+          source: result.source,
+          message: '',
+        });
+      } else {
+        setApifyTokenStatus({
+          checked: true,
+          ok: false,
+          source: null,
+          message: result.message,
+        });
+      }
+    };
+    refreshStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, [authState.authenticated, ensureApifyTokenConfigured]);
 
   /**
    * ============================================================
@@ -914,7 +1017,21 @@ export default function App() {
    *  (Functionality preserved from your Watchdog app; UI adapted)
    * ============================================================
    */
-  const [watchdogActorId, setWatchdogActorId] = useState(WATCHDOG_DEFAULT_ACTOR_ID);
+  const [watchdogActorId, setWatchdogActorId] = useState(() => {
+    try {
+      return localStorage.getItem('watchdog_actor_id') || WATCHDOG_DEFAULT_ACTOR_ID;
+    } catch {
+      return WATCHDOG_DEFAULT_ACTOR_ID;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('watchdog_actor_id', watchdogActorId);
+    } catch {
+      /* ignore */
+    }
+  }, [watchdogActorId]);
   const [watchdogKeywordsInput, setWatchdogKeywordsInput] = useState('');
   const [watchdogCountry, setWatchdogCountry] = useState('AU');
   const [watchdogActiveStatus, setWatchdogActiveStatus] = useState('active');
@@ -1340,7 +1457,10 @@ export default function App() {
           body: inputBody,
         });
 
-        if (!response.ok) throw new Error(`API Error ${response.status}`);
+        if (!response.ok) {
+          const detail = formatApifyError(response);
+          throw new Error(`Apify API Error ${response.status}${detail ? `: ${detail}` : ''}`);
+        }
 
         const data = response.data;
         updateWatchdogJob(job.id, {
@@ -1685,6 +1805,7 @@ export default function App() {
     allowSet,
     apifyRequest,
     dedupColumn,
+    formatApifyError,
     dateViolationEnabled,
     dateViolationStreakLimit,
     filterColumn,
@@ -1943,6 +2064,11 @@ export default function App() {
     addLog('--- PIPELINE START ---', 'system');
 
     try {
+      const tokenCheck = await ensureApifyTokenConfigured();
+      if (!tokenCheck.ok) {
+        throw new Error(`Apify token check failed: ${tokenCheck.message}`);
+      }
+
       // -----------------------------
       // 0) WATCHDOG BULK RUN + INTERNAL EXPORT
       // -----------------------------
@@ -2398,6 +2524,7 @@ export default function App() {
     apifyRequest,
     buildUrlKeywordMap,
     dedupColumn,
+    ensureApifyTokenConfigured,
     extractUrls,
     filterColumn,
     headers,
@@ -2571,6 +2698,11 @@ export default function App() {
                 presetFilterColumn={PRESET_FILTER_COLUMN}
                 presetUrlColumn={PRESET_URL_COLUMN}
                 presetMatchMode={PRESET_MATCH_MODE}
+                apifyToken={apifyToken}
+                setApifyToken={setApifyToken}
+                apifyTokenStatus={apifyTokenStatus}
+                watchdogActorId={watchdogActorId}
+                setWatchdogActorId={setWatchdogActorId}
               />
             )}
 
