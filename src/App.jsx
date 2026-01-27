@@ -1665,7 +1665,7 @@ export default function App() {
    *  RESET (DOES NOT TOUCH SETTINGS VALUES)
    * ============================================================
    */
-  const resetAll = useCallback(async () => {
+  const resetAll = useCallback(() => {
     stopRef.current = false;
 
     setHeaders([]);
@@ -1728,6 +1728,8 @@ export default function App() {
       landlines: false,
       others: false,
     });
+    void stageStore.clearAll();
+
     setWatchdogJobsSafe([]);
     setWatchdogExporting(false);
     setWatchdogExportStatus('');
