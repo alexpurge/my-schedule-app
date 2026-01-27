@@ -17,8 +17,6 @@ const DashboardPanel = ({
   dateViolationStreakLimit,
   setDateViolationStreakLimit,
   defaultDateViolationStreakLimit,
-  safeMode,
-  setSafeMode,
   watchdogMaxItems,
   setWatchdogMaxItems,
   watchdogMaxConcurrency,
@@ -27,13 +25,6 @@ const DashboardPanel = ({
   setWatchdogMaxRuntime,
   memory,
   setMemory,
-  sheetSyncEnabled,
-  setSheetSyncEnabled,
-  sheetSpreadsheetId,
-  setSheetSpreadsheetId,
-  recentSheets,
-  selectedRecentSheet,
-  sheetStatus,
   isRunning,
   runPipeline,
   logs,
@@ -49,8 +40,6 @@ const DashboardPanel = ({
   dedupColumn,
   filterColumn,
   finalWorkbookAvailable,
-  allowFinalDownload,
-  sheetStageAvailability,
   downloadFinalSpreadsheet,
   error,
   stage,
@@ -59,34 +48,11 @@ const DashboardPanel = ({
   abortWatchdogJob,
 }) => {
   const stageReady = {
-    watchdog: rows.length > 0 || sheetStageAvailability?.watchdog,
-    deduplicated: dedupRows.length > 0 || sheetStageAvailability?.deduplicated,
-    purified: purifiedRows.length > 0 || sheetStageAvailability?.purified,
-    master_filter: filteredRows.length > 0 || sheetStageAvailability?.master_filter,
+    watchdog: rows.length > 0,
+    deduplicated: dedupRows.length > 0,
+    purified: purifiedRows.length > 0,
+    master_filter: filteredRows.length > 0,
   };
-
-  const hasRecentSheets = Array.isArray(recentSheets) && recentSheets.length > 0;
-  const selectedMissing = sheetSpreadsheetId && !selectedRecentSheet;
-  const formatModifiedTime = (value) => {
-    if (!value) return '';
-    const date = new Date(value);
-    if (Number.isNaN(date.getTime())) return '';
-    return date.toLocaleString();
-  };
-  const statusLabel = (() => {
-    if (!sheetStatus?.configured) return 'Not connected yet';
-    if (sheetStatus.mode === 'user') {
-      return sheetStatus.accountEmail
-        ? `Connected as ${sheetStatus.accountEmail}`
-        : 'Connected as signed-in user';
-    }
-    if (sheetStatus.mode === 'service_account') {
-      return sheetStatus.serviceAccountEmail
-        ? `Service account ready (${sheetStatus.serviceAccountEmail})`
-        : 'Service account ready';
-    }
-    return 'Connected';
-  })();
 
   return (
     <div className="grid">
@@ -208,22 +174,7 @@ const DashboardPanel = ({
                 disabled={isRunning}
               />
             </div>
-            <div className="toggleRow" style={{ marginTop: 0 }}>
-              <div className="toggleMeta">
-                <div className="toggleLabel">Safe Mode</div>
-                <div className="toggleHint">
-                  {safeMode ? 'On' : 'Off'} • Reduces crashes by running slower and clearing memory.
-                </div>
-              </div>
-              <label className="switch">
-                <input
-                  type="checkbox"
-                  checked={safeMode}
-                  onChange={(e) => setSafeMode(e.target.checked)}
-                />
-                <span className="switchSlider" />
-              </label>
-            </div>
+            <div />
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
@@ -275,87 +226,6 @@ const DashboardPanel = ({
                 onChange={(e) => setMemory(Number(e.target.value) || 0)}
                 disabled={isRunning}
               />
-            </div>
-          </div>
-
-          <div style={{ marginTop: 16, borderTop: '1px solid var(--color-border)', paddingTop: 16 }}>
-            <div className="toggleRow" style={{ marginTop: 0 }}>
-              <div className="toggleMeta">
-                <div className="toggleLabel">Enable Sheets Sync</div>
-                <div className="toggleHint">
-                  {sheetSyncEnabled ? 'On' : 'Off'} • Recommended for large pulls
-                </div>
-              </div>
-              <label className="switch">
-                <input
-                  type="checkbox"
-                  checked={sheetSyncEnabled}
-                  onChange={(e) => setSheetSyncEnabled(e.target.checked)}
-                  disabled={isRunning}
-                />
-                <span className="switchSlider" />
-              </label>
-            </div>
-
-            <div style={{ marginTop: 14 }}>
-              <label className="label">Recent Sheets</label>
-              <select
-                className="select"
-                value={sheetSpreadsheetId}
-                onChange={(e) => {
-                  const nextValue = e.target.value;
-                  setSheetSpreadsheetId(nextValue);
-                }}
-                disabled={!sheetSyncEnabled || isRunning}
-              >
-                <option value="">
-                  {hasRecentSheets ? 'Select a recent sheet' : 'No recent sheets yet'}
-                </option>
-                {selectedMissing && (
-                  <option value={sheetSpreadsheetId}>
-                    Previously selected sheet (not in recent list)
-                  </option>
-                )}
-                {hasRecentSheets &&
-                  recentSheets.map((sheet) => (
-                    <option key={sheet.id} value={sheet.id}>
-                      {sheet.name || 'Untitled sheet'}
-                    </option>
-                  ))}
-              </select>
-            </div>
-
-            <div style={{ marginTop: 14 }}>
-              <label className="label">Selected Sheet</label>
-              <div className="smallNote" style={{ marginTop: 6 }}>
-                {selectedRecentSheet?.name || (sheetSpreadsheetId ? 'Selected sheet' : 'No sheet selected')}
-              </div>
-              {selectedRecentSheet?.modifiedTime && (
-                <div className="smallNote" style={{ marginTop: 4 }}>
-                  Last modified: {formatModifiedTime(selectedRecentSheet.modifiedTime)}
-                </div>
-              )}
-              {selectedRecentSheet?.webViewLink && (
-                <div className="smallNote" style={{ marginTop: 4 }}>
-                  <a href={selectedRecentSheet.webViewLink} target="_blank" rel="noreferrer">
-                    Open in Google Sheets
-                  </a>
-                </div>
-              )}
-              {sheetSpreadsheetId && (
-                <button
-                  className="btn"
-                  type="button"
-                  style={{ marginTop: 10 }}
-                  onClick={() => setSheetSpreadsheetId('')}
-                  disabled={!sheetSyncEnabled || isRunning}
-                >
-                  Clear selected sheet
-                </button>
-              )}
-              <div className="smallNote" style={{ marginTop: 8 }}>
-                <b>Status:</b> {statusLabel}
-              </div>
             </div>
           </div>
 
@@ -582,28 +452,26 @@ const DashboardPanel = ({
             </div>
           </div>
 
-          {allowFinalDownload && (
-            <button
-              className="btn"
-              onClick={downloadFinalSpreadsheet}
-              disabled={!finalWorkbookAvailable}
-              type="button"
-              style={{ width: '100%', marginTop: 14, justifyContent: 'center' }}
-              title="Download final spreadsheet"
-            >
-              {finalWorkbookAvailable ? (
-                <>
-                  <FileDown size={16} />
-                  Download Final Spreadsheet (.xlsx)
-                </>
-              ) : (
-                <>
-                  <Download size={16} />
-                  Download (available after completion)
-                </>
-              )}
-            </button>
-          )}
+          <button
+            className="btn"
+            onClick={downloadFinalSpreadsheet}
+            disabled={!finalWorkbookAvailable}
+            type="button"
+            style={{ width: '100%', marginTop: 14, justifyContent: 'center' }}
+            title="Download final spreadsheet"
+          >
+            {finalWorkbookAvailable ? (
+              <>
+                <FileDown size={16} />
+                Download Final Spreadsheet (.xlsx)
+              </>
+            ) : (
+              <>
+                <Download size={16} />
+                Download (available after completion)
+              </>
+            )}
+          </button>
 
           {error && (
             <div className="notice" style={{ marginTop: 14 }}>
