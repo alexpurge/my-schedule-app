@@ -1090,9 +1090,6 @@ export default function App() {
    * ============================================================
    */
   const [headers, setHeaders] = useState([]);
-  const [rows, setRows] = useState([]);
-  const [dedupRows, setDedupRows] = useState([]);
-  const [purifiedRows, setPurifiedRows] = useState([]);
   const [filteredRows, setFilteredRows] = useState([]);
   const [sourceBaseName, setSourceBaseName] = useState('pipeline');
 
@@ -1206,9 +1203,6 @@ export default function App() {
     stopRef.current = false;
 
     setHeaders([]);
-    setRows([]);
-    setDedupRows([]);
-    setPurifiedRows([]);
     setFilteredRows([]);
     setSourceBaseName('pipeline');
 
@@ -1259,12 +1253,12 @@ export default function App() {
     });
   }, [setWatchdogJobsSafe]);
 
-  const downloadCsvSnapshot = useCallback(
-    async (stageKey, dataRows) => {
+  const downloadMasterCsv = useCallback(
+    async (dataRows) => {
       if (!headers.length || !dataRows?.length) return;
       const csv = buildCsvContent(headers, dataRows);
       const date = new Date().toISOString().slice(0, 10);
-      const filename = `${sourceBaseName || 'pipeline'}_${stageKey}_${date}.csv`;
+      const filename = `${sourceBaseName || 'pipeline'}_master_${date}.csv`;
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       downloadBlob(blob, filename);
       addLog(`Downloaded: ${filename}`, 'success');
@@ -1408,9 +1402,6 @@ export default function App() {
     setHeaders(PIPELINE_ALLOWED_COLUMNS);
     setSourceBaseName(`watchdog_export_${new Date().toISOString().slice(0, 10)}`);
 
-    const masterInputRows = [];
-    const masterDedupRows = [];
-    const masterPurifiedRows = [];
     const masterFilteredRows = [];
     const masterDedupSet = new Set();
 
@@ -1463,8 +1454,6 @@ export default function App() {
             }
 
             totalInputRows += 1;
-            masterInputRows.push(rowObj);
-
             const key = safeToString(rowObj[dedupColumn]).trim();
             if (localSeen.has(key) || masterDedupSet.has(key)) {
               totalDedupRemoved += 1;
@@ -1472,14 +1461,11 @@ export default function App() {
             }
 
             localSeen.add(key);
-            masterDedupRows.push(rowObj);
 
             if (rowHasForeignScript(rowObj)) {
               totalPurifierRemoved += 1;
               continue;
             }
-
-            masterPurifiedRows.push(rowObj);
 
             if (!matchesFilter(rowObj)) {
               totalMasterFilterRemoved += 1;
@@ -1506,17 +1492,12 @@ export default function App() {
         watchdogExportedRows: totalInputRows,
         inputRows: totalInputRows,
         dedupRemoved: totalDedupRemoved,
-        afterDedup: masterDedupRows.length,
+        afterDedup: totalInputRows - totalDedupRemoved,
         purifierRemoved: totalPurifierRemoved,
-        afterPurify: masterPurifiedRows.length,
+        afterPurify: totalInputRows - totalDedupRemoved - totalPurifierRemoved,
         masterFilterRemoved: totalMasterFilterRemoved,
         afterMasterFilter: masterFilteredRows.length,
       }));
-
-      setRows([...masterInputRows]);
-      setDedupRows([...masterDedupRows]);
-      setPurifiedRows([...masterPurifiedRows]);
-      setFilteredRows([...masterFilteredRows]);
     };
 
     let processingChain = Promise.resolve();
@@ -1834,6 +1815,8 @@ export default function App() {
 
     addLog(`Bulk initial pull export complete: ${masterFilteredRows.length} row(s).`, 'success');
 
+    setFilteredRows([...masterFilteredRows]);
+
     return { exportedHeaders: PIPELINE_ALLOWED_COLUMNS, allRows: masterFilteredRows };
   }, [
     abortWatchdogJob,
@@ -2090,9 +2073,6 @@ export default function App() {
     setFinalWorkbook(null);
     setLogs([]);
     setBatchProgress({ total: 0, completed: 0, active: 0 });
-    setRows([]);
-    setDedupRows([]);
-    setPurifiedRows([]);
     setFilteredRows([]);
 
     stopRef.current = false;
@@ -2601,10 +2581,7 @@ export default function App() {
                 stats={stats}
                 filteredOutTotal={filteredOutTotal}
                 keywordCount={keywordCount}
-                downloadCsvSnapshot={downloadCsvSnapshot}
-                rows={rows}
-                dedupRows={dedupRows}
-                purifiedRows={purifiedRows}
+                downloadMasterCsv={downloadMasterCsv}
                 filteredRows={filteredRows}
                 dedupColumn={dedupColumn}
                 filterColumn={filterColumn}
