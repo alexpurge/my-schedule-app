@@ -8,7 +8,6 @@ import Sidebar from './components/Sidebar';
 import TopHeader from './components/TopHeader';
 
 const DEFAULT_DATE_VIOLATION_STREAK_LIMIT = 5;
-const SAFE_MODE_PREVIEW_LIMIT = 50;
 
 /**
  * ============================================================
@@ -218,16 +217,6 @@ const WATCHDOG_DEFAULT_ACTOR_ID = 'bo5X18oGenWEV9vVo';
 const RX_MOBILE = /(?:^|[^0-9])((?:\+?61|0)[\s\-]*4(?:[\s\-]*\d){8})(?![0-9])/g;
 const RX_LANDLINE_GEO = /(?:^|[^0-9])((?:\+?61|0)[\s\-]*[2378](?:[\s\-]*\d){8})(?![0-9])/g;
 const RX_LANDLINE_BIZ = /(?:^|[^0-9])((?:1300|1800)(?:[\s\-]*\d){6}|(?:13)(?:[\s\-]*\d){4})(?![0-9])/g;
-
-const SHEET_STAGE_LABELS = {
-  watchdog: 'Bulk Initial Pull',
-  deduplicated: 'Deduplicated',
-  purified: 'Purified',
-  master_filter: 'Category Filter',
-  mobiles: 'Mobiles',
-  landlines: 'Landlines',
-  others: 'Others',
-};
 
 /**
  * ============================================================
@@ -627,15 +616,12 @@ export default function App() {
   const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
   const [googleScriptReady, setGoogleScriptReady] = useState(false);
   const [googleReady, setGoogleReady] = useState(false);
-  const sheetsTokenClientRef = useRef(null);
   const [authState, setAuthState] = useState({
     loading: true,
     authenticated: false,
     error: null,
   });
   const [authUser, setAuthUser] = useState(null);
-  const [sheetsAccessToken, setSheetsAccessToken] = useState(null);
-  const [sheetsAccessTokenExpiresAt, setSheetsAccessTokenExpiresAt] = useState(0);
   const [welcomePhase, setWelcomePhase] = useState('idle');
   const [welcomeText, setWelcomeText] = useState('');
   const welcomeStartedRef = useRef(false);
@@ -723,13 +709,6 @@ export default function App() {
     document.body.appendChild(script);
   }, [authState.authenticated]);
 
-  useEffect(() => {
-    if (!authState.authenticated) {
-      setSheetsAccessToken(null);
-      setSheetsAccessTokenExpiresAt(0);
-    }
-  }, [authState.authenticated]);
-
   useLayoutEffect(() => {
     if (!authState.authenticated || welcomeStartedRef.current) return;
     welcomeStartedRef.current = true;
@@ -778,60 +757,6 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [welcomePhase]);
 
-  const googleSheetsScopes = useMemo(
-    () => [
-      'https://www.googleapis.com/auth/drive.metadata.readonly',
-      'https://www.googleapis.com/auth/drive.file',
-      'https://www.googleapis.com/auth/spreadsheets',
-    ],
-    []
-  );
-
-  useEffect(() => {
-    if (!googleScriptReady || !googleClientId) return;
-    const google = window.google;
-    if (!google?.accounts?.oauth2) return;
-    sheetsTokenClientRef.current = google.accounts.oauth2.initTokenClient({
-      client_id: googleClientId,
-      scope: googleSheetsScopes.join(' '),
-      callback: () => {},
-    });
-  }, [googleClientId, googleScriptReady, googleSheetsScopes]);
-
-  const requestSheetsAccessToken = useCallback((prompt = '') => {
-    return new Promise((resolve, reject) => {
-      const tokenClient = sheetsTokenClientRef.current;
-      if (!tokenClient) {
-        reject(new Error('Google OAuth is not ready for Sheets access.'));
-        return;
-      }
-      tokenClient.callback = (tokenResponse) => {
-        if (tokenResponse?.access_token) {
-          const expiresIn = Number(tokenResponse.expires_in) || 3600;
-          setSheetsAccessToken(tokenResponse.access_token);
-          setSheetsAccessTokenExpiresAt(Date.now() + expiresIn * 1000 - 60000);
-          resolve(tokenResponse.access_token);
-          return;
-        }
-        reject(new Error(tokenResponse?.error || 'Unable to authorize Google Sheets access.'));
-      };
-      tokenClient.requestAccessToken({ prompt });
-    });
-  }, []);
-
-  const ensureSheetsAccessToken = useCallback(
-    async (prompt = 'consent') => {
-      if (sheetsAccessToken && Date.now() < sheetsAccessTokenExpiresAt) {
-        return sheetsAccessToken;
-      }
-      const nextPrompt = sheetsAccessToken ? '' : prompt;
-      return requestSheetsAccessToken(nextPrompt);
-    },
-    [requestSheetsAccessToken, sheetsAccessToken, sheetsAccessTokenExpiresAt]
-  );
-
-  const loginTokenRequestRef = useRef(false);
-
   const handleGoogleCredential = useCallback(
     async (response) => {
       if (!response?.credential) {
@@ -853,17 +778,6 @@ export default function App() {
         const data = await res.json().catch(() => ({}));
         setAuthState({ loading: false, authenticated: true, error: null });
         setAuthUser(data.name || data.email || null);
-        try {
-          if (loginTokenRequestRef.current) {
-            await ensureSheetsAccessToken('consent');
-          } else {
-            await ensureSheetsAccessToken('');
-          }
-        } catch (error) {
-          console.warn('Google Sheets permissions not granted on login.', error);
-        } finally {
-          loginTokenRequestRef.current = false;
-        }
       } catch (err) {
         setAuthState({
           loading: false,
@@ -872,7 +786,7 @@ export default function App() {
         });
       }
     },
-    [ensureSheetsAccessToken]
+    []
   );
 
   useEffect(() => {
@@ -915,7 +829,6 @@ export default function App() {
   }, [authState.authenticated, googleClientId, googleScriptReady, handleGoogleCredential]);
 
   const handleGoogleButtonClick = useCallback(() => {
-    loginTokenRequestRef.current = true;
     setAuthState((prev) => ({ ...prev, error: null }));
   }, []);
 
@@ -960,320 +873,6 @@ export default function App() {
   const [filterColumn, setFilterColumn] = useState(PRESET_FILTER_COLUMN);
   const [urlColumn, setUrlColumn] = useState(PRESET_URL_COLUMN);
   const [matchMode, setMatchMode] = useState(PRESET_MATCH_MODE); // exact | contains
-  const [memorySaver, setMemorySaver] = useState(() => {
-    try {
-      return localStorage.getItem('pipeline_memory_saver') === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const [safeMode, setSafeMode] = useState(() => {
-    try {
-      return localStorage.getItem('pipeline_safe_mode') === 'true';
-    } catch {
-      return false;
-    }
-  });
-
-  /**
-   * ============================================================
-   *  GOOGLE SHEETS SYNC (NEW)
-   * ============================================================
-   */
-  const [sheetSyncEnabled, setSheetSyncEnabled] = useState(() => {
-    try {
-      return localStorage.getItem('pipeline_sheet_enabled') === 'true';
-    } catch {
-      return false;
-    }
-  });
-  const [sheetSpreadsheetId, setSheetSpreadsheetId] = useState(() => {
-    try {
-      return localStorage.getItem('pipeline_sheet_spreadsheet_id') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [sheetTabPrefix, setSheetTabPrefix] = useState(() => {
-    try {
-      return localStorage.getItem('pipeline_sheet_prefix') || '';
-    } catch {
-      return '';
-    }
-  });
-  const [sheetAppendMode, setSheetAppendMode] = useState(() => {
-    try {
-      return localStorage.getItem('pipeline_sheet_mode') || 'append';
-    } catch {
-      return 'append';
-    }
-  });
-  const [sheetAutoClear, setSheetAutoClear] = useState(() => {
-    try {
-      return localStorage.getItem('pipeline_sheet_auto_clear') !== 'false';
-    } catch {
-      return true;
-    }
-  });
-  const [sheetStatus, setSheetStatus] = useState({
-    configured: false,
-    mode: 'none',
-    accountEmail: null,
-    serviceAccountEmail: null,
-  });
-  const [sheetDiagnostics, setSheetDiagnostics] = useState([]);
-  const [sheetDiagnosticsRunning, setSheetDiagnosticsRunning] = useState(false);
-  const [sheetStageAvailability, setSheetStageAvailability] = useState({
-    watchdog: false,
-    deduplicated: false,
-    purified: false,
-    master_filter: false,
-    mobiles: false,
-    landlines: false,
-    others: false,
-  });
-  const sheetSyncReady = sheetSyncEnabled && sheetSpreadsheetId.trim().length > 0;
-  const [recentSheets, setRecentSheets] = useState([]);
-  const selectedRecentSheet = useMemo(
-    () => recentSheets.find((sheet) => sheet.id === sheetSpreadsheetId) || null,
-    [recentSheets, sheetSpreadsheetId]
-  );
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('pipeline_sheet_enabled', String(sheetSyncEnabled));
-      localStorage.setItem('pipeline_sheet_spreadsheet_id', sheetSpreadsheetId);
-      localStorage.setItem('pipeline_sheet_prefix', sheetTabPrefix);
-      localStorage.setItem('pipeline_sheet_mode', sheetAppendMode);
-      localStorage.setItem('pipeline_sheet_auto_clear', String(sheetAutoClear));
-      localStorage.setItem('pipeline_memory_saver', String(memorySaver));
-      localStorage.setItem('pipeline_safe_mode', String(safeMode));
-    } catch {
-      /* ignore */
-    }
-  }, [
-    memorySaver,
-    safeMode,
-    sheetAppendMode,
-    sheetAutoClear,
-    sheetSpreadsheetId,
-    sheetSyncEnabled,
-    sheetTabPrefix,
-  ]);
-
-  useEffect(() => {
-    if (!safeMode) return;
-    setMemorySaver(true);
-    setSheetAutoClear(true);
-  }, [safeMode, setMemorySaver, setSheetAutoClear]);
-
-  const sheetsRequest = useCallback(
-    async ({ path, method = 'POST', body, accessToken }) => {
-      const headers = { 'Content-Type': 'application/json' };
-      const token = accessToken || sheetsAccessToken;
-      if (token) {
-        headers.Authorization = `Bearer ${token}`;
-      }
-      const res = await fetch(path, {
-        method,
-        credentials: 'include',
-        headers,
-        body: body ? JSON.stringify(body) : undefined,
-      });
-
-      const contentType = res.headers.get('content-type') || '';
-      let payload = null;
-      if (contentType.includes('application/json')) {
-        try {
-          payload = await res.json();
-        } catch {
-          payload = null;
-        }
-      } else {
-        payload = await res.text();
-      }
-      return { ok: res.ok, status: res.status, data: payload };
-    },
-    [sheetsAccessToken]
-  );
-
-  const refreshRecentSheets = useCallback(async () => {
-    let accessToken = null;
-    try {
-      accessToken = await ensureSheetsAccessToken('consent');
-    } catch {
-      setRecentSheets([]);
-      return;
-    }
-
-    let res = await sheetsRequest({
-      path: '/sheets/recent?limit=8',
-      method: 'GET',
-      accessToken,
-    });
-
-    if (!res.ok && (res.status === 401 || res.status === 403)) {
-      try {
-        accessToken = await requestSheetsAccessToken('consent');
-        res = await sheetsRequest({
-          path: '/sheets/recent?limit=8',
-          method: 'GET',
-          accessToken,
-        });
-      } catch {
-        setRecentSheets([]);
-        return;
-      }
-    }
-
-    if (!res.ok || res.data?.disabled) {
-      setRecentSheets([]);
-      return;
-    }
-    const files = Array.isArray(res.data?.files) ? res.data.files : [];
-    setRecentSheets(
-      files
-        .filter((file) => typeof file?.id === 'string' && file.id.length > 0)
-        .map((file) => ({
-          id: file.id,
-          name: typeof file?.name === 'string' ? file.name : '',
-          modifiedTime: file?.modifiedTime || null,
-          webViewLink: file?.webViewLink || null,
-        }))
-    );
-  }, [ensureSheetsAccessToken, requestSheetsAccessToken, sheetsRequest]);
-
-  const SHEETS_DIAGNOSTIC_STEPS = useMemo(
-    () => [
-      { key: 'oauth', label: 'Load Google OAuth client' },
-      { key: 'token', label: 'Authorize Sheets & Drive access' },
-      { key: 'status', label: 'Check Sheets status' },
-      { key: 'recent', label: 'Fetch recent Sheets' },
-    ],
-    []
-  );
-
-  const updateSheetDiagnostic = useCallback((key, updates) => {
-    setSheetDiagnostics((prev) => prev.map((step) => (step.key === key ? { ...step, ...updates } : step)));
-  }, []);
-
-  const runSheetDiagnostics = useCallback(async () => {
-    if (sheetDiagnosticsRunning) return;
-    setSheetDiagnosticsRunning(true);
-    setSheetDiagnostics(
-      SHEETS_DIAGNOSTIC_STEPS.map((step) => ({
-        ...step,
-        status: 'pending',
-        detail: '',
-      }))
-    );
-
-    try {
-      updateSheetDiagnostic('oauth', { status: 'in-progress', detail: 'Checking Google OAuth readiness.' });
-      if (!googleScriptReady || !window.google?.accounts?.oauth2) {
-        updateSheetDiagnostic('oauth', {
-          status: 'error',
-          detail: 'Google OAuth client is still loading. Please try again shortly.',
-        });
-        return;
-      }
-      updateSheetDiagnostic('oauth', { status: 'success', detail: 'OAuth client is ready.' });
-
-      updateSheetDiagnostic('token', { status: 'in-progress', detail: 'Requesting Sheets access token.' });
-      let accessToken = null;
-      try {
-        accessToken = await ensureSheetsAccessToken('consent');
-        updateSheetDiagnostic('token', { status: 'success', detail: 'Access token granted.' });
-      } catch (error) {
-        updateSheetDiagnostic('token', {
-          status: 'error',
-          detail: error instanceof Error ? error.message : 'Authorization failed.',
-        });
-        return;
-      }
-
-      updateSheetDiagnostic('status', { status: 'in-progress', detail: 'Checking Sheets connection status.' });
-      const statusRes = await sheetsRequest({ path: '/sheets/status', method: 'GET', accessToken });
-      if (!statusRes.ok) {
-        updateSheetDiagnostic('status', {
-          status: 'error',
-          detail: statusRes.data?.error || `Status check failed (${statusRes.status}).`,
-        });
-        return;
-      }
-      setSheetStatus({
-        configured: Boolean(statusRes.data?.configured),
-        mode: statusRes.data?.mode || 'none',
-        accountEmail: statusRes.data?.accountEmail || null,
-        serviceAccountEmail: statusRes.data?.serviceAccountEmail || null,
-      });
-      updateSheetDiagnostic('status', {
-        status: 'success',
-        detail: statusRes.data?.configured
-          ? `Connected (${statusRes.data?.mode === 'user' ? 'user' : 'service account'}).`
-          : 'Sheets API not configured on the server yet.',
-      });
-
-      updateSheetDiagnostic('recent', { status: 'in-progress', detail: 'Fetching recent Sheets.' });
-      let recentRes = await sheetsRequest({ path: '/sheets/recent?limit=8', method: 'GET', accessToken });
-      if (!recentRes.ok && (recentRes.status === 401 || recentRes.status === 403)) {
-        try {
-          accessToken = await requestSheetsAccessToken('consent');
-          recentRes = await sheetsRequest({ path: '/sheets/recent?limit=8', method: 'GET', accessToken });
-        } catch (error) {
-          updateSheetDiagnostic('recent', {
-            status: 'error',
-            detail: error instanceof Error ? error.message : 'Unable to refresh Sheets access.',
-          });
-          return;
-        }
-      }
-
-      if (!recentRes.ok) {
-        updateSheetDiagnostic('recent', {
-          status: 'error',
-          detail: recentRes.data?.error || `Recent Sheets fetch failed (${recentRes.status}).`,
-        });
-        return;
-      }
-
-      if (recentRes.data?.disabled) {
-        setRecentSheets([]);
-        updateSheetDiagnostic('recent', {
-          status: 'warning',
-          detail: recentRes.data?.message || 'Recent Sheets lookup is disabled.',
-        });
-        return;
-      }
-
-      const files = Array.isArray(recentRes.data?.files) ? recentRes.data.files : [];
-      setRecentSheets(
-        files
-          .filter((file) => typeof file?.id === 'string' && file.id.length > 0)
-          .map((file) => ({
-            id: file.id,
-            name: typeof file?.name === 'string' ? file.name : '',
-            modifiedTime: file?.modifiedTime || null,
-            webViewLink: file?.webViewLink || null,
-          }))
-      );
-
-      updateSheetDiagnostic('recent', {
-        status: 'success',
-        detail: files.length ? `Loaded ${files.length} recent sheet(s).` : 'No recent Sheets found yet.',
-      });
-    } finally {
-      setSheetDiagnosticsRunning(false);
-    }
-  }, [
-    SHEETS_DIAGNOSTIC_STEPS,
-    ensureSheetsAccessToken,
-    googleScriptReady,
-    requestSheetsAccessToken,
-    sheetDiagnosticsRunning,
-    sheetsRequest,
-    updateSheetDiagnostic,
-  ]);
 
   /**
    * ============================================================
@@ -1308,35 +907,6 @@ export default function App() {
     }
     return { ok: res.ok, status: res.status, data: payload };
   }, []);
-
-  const refreshSheetStatus = useCallback(async () => {
-    const res = await sheetsRequest({ path: '/sheets/status', method: 'GET' });
-    if (res.ok) {
-      setSheetStatus({
-        configured: Boolean(res.data?.configured),
-        mode: res.data?.mode || 'none',
-        accountEmail: res.data?.accountEmail || null,
-        serviceAccountEmail: res.data?.serviceAccountEmail || null,
-      });
-    }
-  }, [sheetsRequest]);
-
-  useEffect(() => {
-    refreshSheetStatus();
-  }, [refreshSheetStatus]);
-
-  useEffect(() => {
-    if (!sheetSyncEnabled) {
-      setRecentSheets([]);
-      return;
-    }
-    refreshRecentSheets();
-  }, [refreshRecentSheets, sheetSyncEnabled]);
-
-  useEffect(() => {
-    if (!sheetSyncEnabled) return;
-    refreshSheetStatus();
-  }, [refreshSheetStatus, sheetSyncEnabled, sheetsAccessToken]);
 
   /**
    * ============================================================
@@ -1389,10 +959,6 @@ export default function App() {
   const [purifiedRows, setPurifiedRows] = useState([]);
   const [filteredRows, setFilteredRows] = useState([]);
   const [sourceBaseName, setSourceBaseName] = useState('pipeline');
-  const rowsRef = useRef([]);
-  const dedupRowsRef = useRef([]);
-  const purifiedRowsRef = useRef([]);
-  const filteredRowsRef = useRef([]);
 
   /**
    * ============================================================
@@ -1414,8 +980,6 @@ export default function App() {
    */
   const [logs, setLogs] = useState([]);
   const logRef = useRef(null);
-  const logBufferRef = useRef([]);
-  const logFlushTimerRef = useRef(null);
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -1423,192 +987,8 @@ export default function App() {
 
   const addLog = useCallback((message, type = 'info') => {
     const timestamp = new Date().toLocaleTimeString();
-    if (safeMode) {
-      logBufferRef.current.push({ message, type, timestamp });
-      if (logBufferRef.current.length >= 50) {
-        const pending = logBufferRef.current.slice();
-        logBufferRef.current = [];
-        setLogs((prev) => [...prev, ...pending]);
-      }
-      return;
-    }
     setLogs((prev) => [...prev, { message, type, timestamp }]);
-  }, [safeMode]);
-
-  useEffect(() => {
-    if (!safeMode) return;
-    logFlushTimerRef.current = window.setInterval(() => {
-      if (!logBufferRef.current.length) return;
-      const pending = logBufferRef.current.slice();
-      logBufferRef.current = [];
-      setLogs((prev) => [...prev, ...pending]);
-    }, 250);
-    return () => {
-      if (logFlushTimerRef.current) {
-        window.clearInterval(logFlushTimerRef.current);
-        logFlushTimerRef.current = null;
-      }
-      if (logBufferRef.current.length) {
-        const pending = logBufferRef.current.slice();
-        logBufferRef.current = [];
-        setLogs((prev) => [...prev, ...pending]);
-      }
-    };
-  }, [safeMode]);
-
-  const buildSheetTitle = useCallback(
-    (stageKeyOrLabel) => {
-      const label = SHEET_STAGE_LABELS[stageKeyOrLabel] || stageKeyOrLabel;
-      const prefix = sheetTabPrefix.trim();
-      return sanitizeSheetName(prefix ? `${prefix} - ${label}` : label);
-    },
-    [sheetTabPrefix]
-  );
-
-  const syncStageToSheets = useCallback(
-    async ({ stageKey, headers: stageHeaders, rows: stageRows }) => {
-      if (!sheetSyncReady) return false;
-      if (!Array.isArray(stageHeaders) || !Array.isArray(stageRows)) return false;
-      if (!stageHeaders.length) return false;
-
-      const sheetTitle = buildSheetTitle(stageKey);
-      const stageLabel = SHEET_STAGE_LABELS[stageKey] || sheetTitle;
-      let accessToken = null;
-      try {
-        accessToken = await ensureSheetsAccessToken('consent');
-      } catch {
-        addLog('Google Sheets authorization was cancelled or blocked.', 'error');
-        return false;
-      }
-
-      const sendSyncRequest = async (rowsChunk) => {
-        let res = await sheetsRequest({
-          path: '/sheets/sync',
-          body: {
-            spreadsheetId: sheetSpreadsheetId.trim(),
-            sheetTitle,
-            headers: stageHeaders,
-            rows: rowsChunk,
-            mode: sheetAppendMode,
-          },
-          accessToken,
-        });
-
-        if (!res.ok && (res.status === 401 || res.status === 403)) {
-          try {
-            accessToken = await requestSheetsAccessToken('consent');
-            res = await sheetsRequest({
-              path: '/sheets/sync',
-              body: {
-                spreadsheetId: sheetSpreadsheetId.trim(),
-                sheetTitle,
-                headers: stageHeaders,
-                rows: rowsChunk,
-                mode: sheetAppendMode,
-              },
-              accessToken,
-            });
-          } catch {
-            addLog('Google Sheets authorization expired. Please sign in again.', 'error');
-            return { ok: false, status: 401 };
-          }
-        }
-
-        return res;
-      };
-
-      if (safeMode && stageRows.length > 0) {
-        const chunkSize = 2000;
-        const totalBatches = Math.ceil(stageRows.length / chunkSize);
-        for (let idx = 0; idx < totalBatches; idx += 1) {
-          const start = idx * chunkSize;
-          const chunk = stageRows.slice(start, start + chunkSize);
-          setStatus(`Syncing ${stageLabel}: batch ${idx + 1} of ${totalBatches}...`);
-          addLog(`Google Sheets: syncing ${stageLabel} batch ${idx + 1}/${totalBatches} (${chunk.length} rows).`, 'info');
-          const res = await sendSyncRequest(chunk);
-          if (!res.ok) {
-            addLog(`Google Sheets sync failed for "${sheetTitle}" (${res.status}).`, 'error');
-            return false;
-          }
-          await sleep(0);
-        }
-
-        setSheetStageAvailability((prev) => ({ ...prev, [stageKey]: true }));
-        addLog(`Google Sheets: synced ${stageRows.length} row(s) to "${sheetTitle}".`, 'success');
-        return true;
-      }
-
-      const res = await sendSyncRequest(stageRows);
-      if (res.ok) {
-        setSheetStageAvailability((prev) => ({ ...prev, [stageKey]: true }));
-        addLog(`Google Sheets: synced ${stageRows.length} row(s) to "${sheetTitle}".`, 'success');
-        return true;
-      }
-
-      addLog(`Google Sheets sync failed for "${sheetTitle}" (${res.status}).`, 'error');
-      return false;
-    },
-    [
-      addLog,
-      buildSheetTitle,
-      ensureSheetsAccessToken,
-      requestSheetsAccessToken,
-      safeMode,
-      sheetAppendMode,
-      sheetSpreadsheetId,
-      sheetSyncReady,
-      sheetsRequest,
-      setStatus,
-    ]
-  );
-
-  const fetchStageFromSheets = useCallback(
-    async (stageKey) => {
-      if (!sheetSyncReady) return null;
-      const sheetTitle = buildSheetTitle(stageKey);
-      let accessToken = null;
-      try {
-        accessToken = await ensureSheetsAccessToken('consent');
-      } catch {
-        addLog('Google Sheets authorization was cancelled or blocked.', 'error');
-        return null;
-      }
-
-      let res = await sheetsRequest({
-        path: '/sheets/read',
-        body: { spreadsheetId: sheetSpreadsheetId.trim(), sheetTitle },
-        accessToken,
-      });
-
-      if (!res.ok && (res.status === 401 || res.status === 403)) {
-        try {
-          accessToken = await requestSheetsAccessToken('consent');
-          res = await sheetsRequest({
-            path: '/sheets/read',
-            body: { spreadsheetId: sheetSpreadsheetId.trim(), sheetTitle },
-            accessToken,
-          });
-        } catch {
-          addLog('Google Sheets authorization expired. Please sign in again.', 'error');
-          return null;
-        }
-      }
-      if (!res.ok) {
-        addLog(`Google Sheets read failed for "${sheetTitle}" (${res.status}).`, 'error');
-        return null;
-      }
-      return { headers: res.data?.headers || [], rows: res.data?.rows || [] };
-    },
-    [
-      addLog,
-      buildSheetTitle,
-      ensureSheetsAccessToken,
-      requestSheetsAccessToken,
-      sheetSpreadsheetId,
-      sheetSyncReady,
-      sheetsRequest,
-    ]
-  );
+  }, []);
 
   /**
    * ============================================================
@@ -1633,7 +1013,6 @@ export default function App() {
    * ============================================================
    */
   const [finalWorkbook, setFinalWorkbook] = useState(null);
-  const finalWorkbookRef = useRef(null);
 
   const [stats, setStats] = useState({
     // Watchdog stats
@@ -1696,10 +1075,6 @@ export default function App() {
     setPurifiedRows([]);
     setFilteredRows([]);
     setSourceBaseName('pipeline');
-    rowsRef.current = [];
-    dedupRowsRef.current = [];
-    purifiedRowsRef.current = [];
-    filteredRowsRef.current = [];
 
     setIsRunning(false);
     setStage('idle');
@@ -1711,21 +1086,10 @@ export default function App() {
     setBatchProgress({ total: 0, completed: 0, active: 0 });
 
     setFinalWorkbook(null);
-    finalWorkbookRef.current = null;
 
     setWatchdogJobsSafe([]);
     setWatchdogExporting(false);
     setWatchdogExportStatus('');
-
-    setSheetStageAvailability({
-      watchdog: false,
-      deduplicated: false,
-      purified: false,
-      master_filter: false,
-      mobiles: false,
-      landlines: false,
-      others: false,
-    });
 
     setStats({
       watchdogKeywords: 0,
@@ -1761,31 +1125,15 @@ export default function App() {
 
   const downloadCsvSnapshot = useCallback(
     async (stageKey, dataRows) => {
-      let csvHeaders = headers;
-      let csvRows = dataRows;
-      if (safeMode && (!csvRows || csvRows.length <= SAFE_MODE_PREVIEW_LIMIT)) {
-        if (stageKey === 'watchdog') csvRows = rowsRef.current;
-        if (stageKey === 'deduplicated') csvRows = dedupRowsRef.current;
-        if (stageKey === 'purified') csvRows = purifiedRowsRef.current;
-        if (stageKey === 'master_filter') csvRows = filteredRowsRef.current;
-      }
-      if ((!csvHeaders.length || !csvRows.length) && sheetSyncReady) {
-        const remote = await fetchStageFromSheets(stageKey);
-        if (remote) {
-          csvHeaders = remote.headers;
-          csvRows = remote.rows;
-        }
-      }
-
-      if (!csvHeaders.length || !csvRows.length) return;
-      const csv = buildCsvContent(csvHeaders, csvRows);
+      if (!headers.length || !dataRows?.length) return;
+      const csv = buildCsvContent(headers, dataRows);
       const date = new Date().toISOString().slice(0, 10);
       const filename = `${sourceBaseName || 'pipeline'}_${stageKey}_${date}.csv`;
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       downloadBlob(blob, filename);
       addLog(`Downloaded: ${filename}`, 'success');
     },
-    [addLog, fetchStageFromSheets, headers, safeMode, sheetSyncReady, sourceBaseName]
+    [addLog, headers, sourceBaseName]
   );
 
   /**
@@ -2262,9 +1610,6 @@ export default function App() {
     const DATA_BATCH = 2;
     const DATA_PAGE_SIZE = 200;
     const allRows = [];
-    const liteFieldSet = safeMode
-      ? new Set([dedupColumn, filterColumn, urlColumn, 'keyword'].filter(Boolean))
-      : null;
     let processedCount = 0;
 
     for (let i = 0; i < jobsWithData.length; i += DATA_BATCH) {
@@ -2289,25 +1634,12 @@ export default function App() {
               const enriched = { ...item, keyword: job.keyword };
               const flattened = flattenRecord(enriched);
 
-              if (safeMode) {
-                liteFieldSet.forEach((fieldName) => {
-                  const val = flattened[fieldName] ?? '';
-                  rowObj[fieldName] = safeToString(val).replace(/\r?\n/g, ' ');
-                });
-              } else {
-                for (const fieldName of exportedHeaders) {
-                  const val = flattened[fieldName] ?? '';
-                  rowObj[fieldName] = safeToString(val).replace(/\r?\n/g, ' ');
-                }
+              for (const fieldName of exportedHeaders) {
+                const val = flattened[fieldName] ?? '';
+                rowObj[fieldName] = safeToString(val).replace(/\r?\n/g, ' ');
               }
 
               allRows.push(rowObj);
-              if (safeMode && allRows.length % 500 === 0) {
-                setWatchdogExportStatus(
-                  `Dataset ${i + jobIndex + 1}/${jobsWithData.length}: ${allRows.length} row(s) so far...`
-                );
-                await sleep(0);
-              }
             }
 
             if (items.length < DATA_PAGE_SIZE) break;
@@ -2315,18 +1647,11 @@ export default function App() {
         } catch {
           /* ignore */
         }
-        if (safeMode) {
-          setWatchdogExportStatus(
-            `Dataset ${i + jobIndex + 1}/${jobsWithData.length}: ${allRows.length} row(s) so far...`
-          );
-        }
       }
 
       processedCount += batch.length;
       setWatchdogExportStatus(
-        safeMode
-          ? `Processed ${processedCount}/${jobsWithData.length} datasets • ${allRows.length} row(s)...`
-          : `Processed ${processedCount}/${jobsWithData.length} datasets...`
+        `Processed ${processedCount}/${jobsWithData.length} datasets...`
       );
       // UI progress export 25 -> 35
       setProgress(25 + (processedCount / Math.max(1, jobsWithData.length)) * 10);
@@ -2342,8 +1667,7 @@ export default function App() {
 
     // Store exported "CSV" (internally) as pipeline input
     setHeaders(exportedHeaders);
-    rowsRef.current = allRows;
-    setRows(safeMode ? allRows.slice(0, SAFE_MODE_PREVIEW_LIMIT) : allRows);
+    setRows(allRows);
     setSourceBaseName(`watchdog_export_${new Date().toISOString().slice(0, 10)}`);
 
     setStats((s) => ({
@@ -2354,18 +1678,7 @@ export default function App() {
 
     addLog(`Bulk initial pull export complete: ${allRows.length} row(s).`, 'success');
 
-    const watchdogSynced = await syncStageToSheets({
-      stageKey: 'watchdog',
-      headers: exportedHeaders,
-      rows: allRows,
-    });
-
-    if (sheetSyncReady && sheetAutoClear && watchdogSynced) {
-      setRows([]);
-      rowsRef.current = [];
-    }
-
-    return { exportedHeaders, allRows, watchdogSynced };
+    return { exportedHeaders, allRows };
   }, [
     abortWatchdogJob,
     addLog,
@@ -2376,11 +1689,7 @@ export default function App() {
     dateViolationStreakLimit,
     filterColumn,
     memory,
-    safeMode,
     setWatchdogJobsSafe,
-    sheetAutoClear,
-    sheetSyncReady,
-    syncStageToSheets,
     updateWatchdogJob,
     urlColumn,
     watchdogActiveStatus,
@@ -2624,20 +1933,6 @@ export default function App() {
     setDedupRows([]);
     setPurifiedRows([]);
     setFilteredRows([]);
-    rowsRef.current = [];
-    dedupRowsRef.current = [];
-    purifiedRowsRef.current = [];
-    filteredRowsRef.current = [];
-    finalWorkbookRef.current = null;
-    setSheetStageAvailability({
-      watchdog: false,
-      deduplicated: false,
-      purified: false,
-      master_filter: false,
-      mobiles: false,
-      landlines: false,
-      others: false,
-    });
 
     stopRef.current = false;
 
@@ -2646,18 +1941,12 @@ export default function App() {
     setStatus('Running Bulk Initial Pull...');
     setProgress(1);
     addLog('--- PIPELINE START ---', 'system');
-    if (safeMode) {
-      addLog('Safe Mode enabled: crash-prevention safeguards active (slower, lower memory).', 'warning');
-    }
-    if (memorySaver) {
-      addLog('Memory Saver enabled: processing rows sequentially to reduce crashes.', 'warning');
-    }
 
     try {
       // -----------------------------
       // 0) WATCHDOG BULK RUN + INTERNAL EXPORT
       // -----------------------------
-      const { allRows, exportedHeaders, watchdogSynced } = await runWatchdogAndExportRows();
+      const { allRows, exportedHeaders } = await runWatchdogAndExportRows();
       let workingRows = allRows;
       let pipelineHeaders = exportedHeaders;
 
@@ -2693,7 +1982,7 @@ export default function App() {
       let maxKeywords = 0;
       let dupRemoved = 0;
 
-      const dedupChunk = safeMode ? 100 : memorySaver ? 1 : 400;
+      const dedupChunk = 400;
       for (let i = 0; i < workingRows.length; i += 1) {
         if (stopRef.current) throw new Error('Stopped by user.');
         const row = workingRows[i];
@@ -2716,22 +2005,7 @@ export default function App() {
           await sleep(0);
           const pct = 35 + (i / Math.max(1, workingRows.length)) * 4; // 35 -> 39
           setProgress(Math.min(39, Math.max(35, pct)));
-          if (safeMode) {
-            setStatus(`Deduplicating CSV... ${i}/${workingRows.length}`);
-          }
         }
-      }
-
-      if (safeMode || memorySaver) {
-        workingRows.length = 0;
-        setRows([]);
-        rowsRef.current = [];
-      }
-
-      if (sheetSyncReady && sheetAutoClear && watchdogSynced) {
-        workingRows.length = 0;
-        setRows([]);
-        rowsRef.current = [];
       }
 
       for (const { row, keywords } of dedupedMap.values()) {
@@ -2743,11 +2017,6 @@ export default function App() {
         }
         deduped.push(row);
       }
-      if (safeMode) {
-        seen.clear();
-        dedupedMap.clear();
-      }
-
       if (maxKeywords > 1) {
         const baseHeaders = pipelineHeaders.filter(
           (header) => header !== keywordColumn && !header.startsWith(`${keywordColumn}_`)
@@ -2764,24 +2033,7 @@ export default function App() {
         dedupRemoved: dupRemoved,
         afterDedup: deduped.length,
       }));
-      if (safeMode) {
-        dedupRowsRef.current = deduped;
-        setDedupRows(deduped.slice(0, SAFE_MODE_PREVIEW_LIMIT));
-      } else if (memorySaver) {
-        setDedupRows([]);
-      } else {
-        setDedupRows(deduped);
-      }
-
-      const dedupSynced = await syncStageToSheets({
-        stageKey: 'deduplicated',
-        headers: pipelineHeaders,
-        rows: deduped,
-      });
-
-      if (sheetSyncReady && sheetAutoClear && dedupSynced) {
-        setDedupRows([]);
-      }
+      setDedupRows(deduped);
 
       addLog(`Deduplicator: removed ${dupRemoved} duplicates (by "${dedupColumn}").`, dupRemoved ? 'warning' : 'success');
 
@@ -2796,7 +2048,7 @@ export default function App() {
 
       const purified = [];
       let purifierRemoved = 0;
-      const purifyChunk = safeMode ? 100 : memorySaver ? 1 : 250;
+      const purifyChunk = 250;
 
       for (let i = 0; i < deduped.length; i++) {
         if (stopRef.current) throw new Error('Stopped by user.');
@@ -2808,9 +2060,6 @@ export default function App() {
           await sleep(0);
           const pct = 40 + (i / Math.max(1, deduped.length)) * 8; // 40 -> 48
           setProgress(Math.min(48, Math.max(40, pct)));
-          if (safeMode) {
-            setStatus(`Purifying... ${i}/${deduped.length}`);
-          }
         }
       }
 
@@ -2819,37 +2068,12 @@ export default function App() {
         purifierRemoved,
         afterPurify: purified.length,
       }));
-      if (safeMode) {
-        purifiedRowsRef.current = purified;
-        setPurifiedRows(purified.slice(0, SAFE_MODE_PREVIEW_LIMIT));
-      } else if (memorySaver) {
-        setPurifiedRows([]);
-      } else {
-        setPurifiedRows(purified);
-      }
-
-      const purifiedSynced = await syncStageToSheets({
-        stageKey: 'purified',
-        headers: pipelineHeaders,
-        rows: purified,
-      });
+      setPurifiedRows(purified);
 
       addLog(
         `Foreign Language Detector: removed ${purifierRemoved} row(s) containing foreign script.`,
         purifierRemoved ? 'warning' : 'success'
       );
-
-      if (sheetSyncReady && sheetAutoClear && purifiedSynced) {
-        deduped.length = 0;
-        setDedupRows([]);
-        dedupRowsRef.current = [];
-      }
-
-      if (safeMode || memorySaver) {
-        deduped.length = 0;
-        setDedupRows([]);
-        dedupRowsRef.current = [];
-      }
 
       workingRows = purified;
 
@@ -2862,7 +2086,7 @@ export default function App() {
 
       const kept = [];
       let masterFilterRemoved = 0;
-      const filterChunk = safeMode ? 100 : memorySaver ? 1 : 250;
+      const filterChunk = 250;
 
       if (matchMode === 'contains') {
         const keywords = Array.from(allowSet);
@@ -2872,18 +2096,7 @@ export default function App() {
           const raw = safeToString(rowObj[filterColumn]).trim();
           const val = raw.toLowerCase();
 
-          let hit = false;
-          if (safeMode) {
-            for (let k = 0; k < keywords.length; k += 1) {
-              const keyword = keywords[k];
-              if (keyword && val.includes(keyword)) {
-                hit = true;
-                break;
-              }
-            }
-          } else {
-            hit = keywords.some((k) => k && val.includes(k));
-          }
+          const hit = keywords.some((k) => k && val.includes(k));
           if (hit) kept.push(rowObj);
           else masterFilterRemoved++;
 
@@ -2891,9 +2104,6 @@ export default function App() {
             await sleep(0);
             const pct = 48 + (i / Math.max(1, workingRows.length)) * 7; // 48 -> 55
             setProgress(Math.min(55, Math.max(48, pct)));
-            if (safeMode) {
-              setStatus(`Category Filtering... ${i}/${workingRows.length}`);
-            }
           }
         }
       } else {
@@ -2910,9 +2120,6 @@ export default function App() {
             await sleep(0);
             const pct = 48 + (i / Math.max(1, workingRows.length)) * 7; // 48 -> 55
             setProgress(Math.min(55, Math.max(48, pct)));
-            if (safeMode) {
-              setStatus(`Category Filtering... ${i}/${workingRows.length}`);
-            }
           }
         }
       }
@@ -2922,37 +2129,12 @@ export default function App() {
         masterFilterRemoved,
         afterMasterFilter: kept.length,
       }));
-      if (safeMode) {
-        filteredRowsRef.current = kept;
-        setFilteredRows(kept.slice(0, SAFE_MODE_PREVIEW_LIMIT));
-      } else if (memorySaver) {
-        setFilteredRows([]);
-      } else {
-        setFilteredRows(kept);
-      }
-
-      const filterSynced = await syncStageToSheets({
-        stageKey: 'master_filter',
-        headers: pipelineHeaders,
-        rows: kept,
-      });
+      setFilteredRows(kept);
 
       addLog(
         `Category Filter: kept ${kept.length}, removed ${masterFilterRemoved} (column "${filterColumn}", mode "${matchMode}").`,
         kept.length ? 'success' : 'warning'
       );
-
-      if (sheetSyncReady && sheetAutoClear && filterSynced) {
-        purified.length = 0;
-        setPurifiedRows([]);
-        purifiedRowsRef.current = [];
-      }
-
-      if (safeMode || memorySaver) {
-        purified.length = 0;
-        setPurifiedRows([]);
-        purifiedRowsRef.current = [];
-      }
 
       workingRows = kept;
 
@@ -2973,18 +2155,6 @@ export default function App() {
       setStats((s) => ({ ...s, urlsForApify: allUrls.length }));
 
       if (!allUrls.length) throw new Error(`No URLs detected in column "${urlColumn}".`);
-
-      if (sheetSyncReady && sheetAutoClear && filterSynced) {
-        workingRows.length = 0;
-        setFilteredRows([]);
-        filteredRowsRef.current = [];
-      }
-
-      if (safeMode || memorySaver) {
-        workingRows.length = 0;
-        setFilteredRows([]);
-        filteredRowsRef.current = [];
-      }
 
       addLog(`Apify: extracted ${allUrls.length} URL(s) from "${urlColumn}".`, 'info');
 
@@ -3083,9 +2253,6 @@ export default function App() {
           addLog(`Failed to fetch dataset ${dsId} (${res.status}).`, 'error');
         }
 
-        if (safeMode) {
-          setStatus(`Fetching Apify datasets... ${i + 1}/${validIds.length} (${allItems.length} items)`);
-        }
         const pct = 80 + ((i + 1) / validIds.length) * 10; // 80 -> 90
         setProgress(Math.min(90, Math.max(80, pct)));
         await sleep(0);
@@ -3095,9 +2262,7 @@ export default function App() {
 
       setStats((s) => ({ ...s, apifyItems: allItems.length }));
       addLog(`Apify: merged ${allItems.length} total record(s).`, 'success');
-      if (safeMode) {
-        urlKeywordMap.clear();
-      }
+      urlKeywordMap.clear();
 
       // -----------------------------
       // 6) AU NUMBER SORTER
@@ -3138,7 +2303,7 @@ export default function App() {
       const landlineList = [];
       const otherList = [];
 
-      const sortChunk = safeMode ? 100 : memorySaver ? 1 : 250;
+      const sortChunk = 250;
 
       for (let idx = 0; idx < allItems.length; idx++) {
         if (stopRef.current) throw new Error('Stopped by user.');
@@ -3181,18 +2346,7 @@ export default function App() {
           await sleep(0);
           const pct = 92 + (idx / Math.max(1, allItems.length)) * 6; // 92 -> 98
           setProgress(Math.min(98, Math.max(92, pct)));
-          if (safeMode) {
-            setStatus(`Sorting numbers... ${idx}/${allItems.length}`);
-          }
         }
-
-        if (safeMode || memorySaver) {
-          allItems[idx] = null;
-        }
-      }
-
-      if (safeMode || memorySaver) {
-        allItems.length = 0;
       }
 
       setStats((s) => ({
@@ -3224,28 +2378,7 @@ export default function App() {
         ],
       };
 
-      const finalSyncResults = await Promise.all([
-        syncStageToSheets({ stageKey: 'mobiles', headers: allKeys, rows: mobileList }),
-        syncStageToSheets({ stageKey: 'landlines', headers: allKeys, rows: landlineList }),
-        syncStageToSheets({ stageKey: 'others', headers: allKeys, rows: otherList }),
-      ]);
-
-      const finalSynced = finalSyncResults.every(Boolean);
-
-      if (safeMode) {
-        finalWorkbookRef.current =
-          sheetSyncReady && sheetAutoClear && finalSynced ? null : finalWorkbookPayload;
-        setFinalWorkbook(null);
-      } else {
-        setFinalWorkbook(sheetSyncReady && sheetAutoClear && finalSynced ? null : finalWorkbookPayload);
-      }
-
-      if (sheetSyncReady && sheetAutoClear && finalSynced) {
-        mobileList.length = 0;
-        landlineList.length = 0;
-        otherList.length = 0;
-        finalWorkbookRef.current = null;
-      }
+      setFinalWorkbook(finalWorkbookPayload);
 
       addLog('--- PIPELINE COMPLETE ---', 'success');
     } catch (err) {
@@ -3273,18 +2406,11 @@ export default function App() {
     resolveItemUrl,
     runSingleBatch,
     runWatchdogAndExportRows,
-    setSheetStageAvailability,
-    sheetAutoClear,
-    sheetSyncReady,
     sourceBaseName,
-    syncStageToSheets,
     urlColumn,
-    memorySaver,
-    safeMode,
     setDedupRows,
     setFilteredRows,
     setPurifiedRows,
-    setRows,
     watchdogMaxConcurrency,
   ]);
 
@@ -3294,47 +2420,11 @@ export default function App() {
    * ============================================================
    */
   const downloadFinalSpreadsheet = useCallback(async () => {
-    if (sheetAutoClear) {
-      addLog('Download disabled while Reduce local memory usage is enabled.', 'warning');
-      return;
-    }
-    let workbook = safeMode ? finalWorkbookRef.current : finalWorkbook;
+    if (!finalWorkbook) return;
 
-    if (!workbook && sheetSyncReady) {
-      const [mobiles, landlines, others] = await Promise.all([
-        fetchStageFromSheets('mobiles'),
-        fetchStageFromSheets('landlines'),
-        fetchStageFromSheets('others'),
-      ]);
-
-      const headerSet = new Set();
-      const mergedHeaders = [];
-      [mobiles, landlines, others].forEach((data) => {
-        (data?.headers || []).forEach((header) => {
-          if (!headerSet.has(header)) {
-            headerSet.add(header);
-            mergedHeaders.push(header);
-          }
-        });
-      });
-
-      const finalHeaders = mergedHeaders.length ? mergedHeaders : headers;
-      workbook = {
-        headers: finalHeaders,
-        fileBaseName: sourceBaseName || 'pipeline',
-        sheets: [
-          { name: 'Mobiles', rows: mobiles?.rows || [] },
-          { name: 'Landlines', rows: landlines?.rows || [] },
-          { name: 'Others', rows: others?.rows || [] },
-        ],
-      };
-    }
-
-    if (!workbook) return;
-
-    const xlsxData = buildXlsxFile(workbook);
+    const xlsxData = buildXlsxFile(finalWorkbook);
     const date = new Date().toISOString().slice(0, 10);
-    const filename = `${workbook.fileBaseName || 'pipeline'}_Sorted_${date}.xlsx`;
+    const filename = `${finalWorkbook.fileBaseName || 'pipeline'}_Sorted_${date}.xlsx`;
 
     const blob = new Blob([xlsxData], {
       type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
@@ -3342,7 +2432,7 @@ export default function App() {
     downloadBlob(blob, filename);
 
     addLog(`Downloaded: ${filename}`, 'success');
-  }, [addLog, fetchStageFromSheets, finalWorkbook, headers, safeMode, sheetAutoClear, sheetSyncReady, sourceBaseName]);
+  }, [addLog, finalWorkbook]);
 
   /**
    * ============================================================
@@ -3372,11 +2462,7 @@ export default function App() {
     .filter(Boolean)
     .join(' ');
 
-  const finalWorkbookAvailable =
-    !sheetAutoClear &&
-    (Boolean(safeMode ? finalWorkbookRef.current : finalWorkbook) ||
-      (sheetSyncReady &&
-        (sheetStageAvailability.mobiles || sheetStageAvailability.landlines || sheetStageAvailability.others)));
+  const finalWorkbookAvailable = Boolean(finalWorkbook);
 
   if (!authState.authenticated) {
     return (
@@ -3450,7 +2536,6 @@ export default function App() {
           resetAll={resetAll}
           downloadFinalSpreadsheet={downloadFinalSpreadsheet}
           finalWorkbookAvailable={finalWorkbookAvailable}
-          allowFinalDownload={!sheetAutoClear}
         />
 
         {/* Progress */}
@@ -3486,22 +2571,6 @@ export default function App() {
                 presetFilterColumn={PRESET_FILTER_COLUMN}
                 presetUrlColumn={PRESET_URL_COLUMN}
                 presetMatchMode={PRESET_MATCH_MODE}
-                memorySaver={memorySaver}
-                setMemorySaver={setMemorySaver}
-                safeMode={safeMode}
-                sheetSyncEnabled={sheetSyncEnabled}
-                sheetTabPrefix={sheetTabPrefix}
-                setSheetTabPrefix={setSheetTabPrefix}
-                sheetAppendMode={sheetAppendMode}
-                setSheetAppendMode={setSheetAppendMode}
-                sheetAutoClear={sheetAutoClear}
-                setSheetAutoClear={setSheetAutoClear}
-                sheetStatus={sheetStatus}
-                refreshSheetStatus={refreshSheetStatus}
-                onConnectSheets={runSheetDiagnostics}
-                sheetDiagnostics={sheetDiagnostics}
-                sheetDiagnosticsRunning={sheetDiagnosticsRunning}
-                recentSheets={recentSheets}
               />
             )}
 
@@ -3528,8 +2597,6 @@ export default function App() {
                 dateViolationStreakLimit={dateViolationStreakLimit}
                 setDateViolationStreakLimit={setDateViolationStreakLimit}
                 defaultDateViolationStreakLimit={DEFAULT_DATE_VIOLATION_STREAK_LIMIT}
-                safeMode={safeMode}
-                setSafeMode={setSafeMode}
                 watchdogMaxItems={watchdogMaxItems}
                 setWatchdogMaxItems={setWatchdogMaxItems}
                 watchdogMaxConcurrency={watchdogMaxConcurrency}
@@ -3538,13 +2605,6 @@ export default function App() {
                 setWatchdogMaxRuntime={setWatchdogMaxRuntime}
                 memory={memory}
                 setMemory={setMemory}
-                sheetSyncEnabled={sheetSyncEnabled}
-                setSheetSyncEnabled={setSheetSyncEnabled}
-                sheetSpreadsheetId={sheetSpreadsheetId}
-                setSheetSpreadsheetId={setSheetSpreadsheetId}
-                recentSheets={recentSheets}
-                selectedRecentSheet={selectedRecentSheet}
-                sheetStatus={sheetStatus}
                 isRunning={isRunning}
                 runPipeline={runPipeline}
                 logs={logs}
@@ -3560,8 +2620,6 @@ export default function App() {
                 dedupColumn={dedupColumn}
                 filterColumn={filterColumn}
                 finalWorkbookAvailable={finalWorkbookAvailable}
-                allowFinalDownload={!sheetAutoClear}
-                sheetStageAvailability={sheetStageAvailability}
                 downloadFinalSpreadsheet={downloadFinalSpreadsheet}
                 error={error}
                 stage={stage}

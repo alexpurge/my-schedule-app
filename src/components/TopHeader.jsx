@@ -10,7 +10,6 @@ const TopHeader = ({
   resetAll,
   downloadFinalSpreadsheet,
   finalWorkbookAvailable,
-  allowFinalDownload,
 }) => {
   const headerTitle =
     activeTab === 'settings' ? 'Pipeline Settings' : activeTab === 'filtration' ? 'Filtration System' : 'Dashboard';
@@ -36,18 +35,16 @@ const TopHeader = ({
         Reset
       </button>
 
-      {allowFinalDownload && (
-        <button
-          className="btn"
-          onClick={downloadFinalSpreadsheet}
-          disabled={!finalWorkbookAvailable}
-          type="button"
-          title="Download final spreadsheet"
-        >
-          <Download size={16} />
-          Export
-        </button>
-      )}
+      <button
+        className="btn"
+        onClick={downloadFinalSpreadsheet}
+        disabled={!finalWorkbookAvailable}
+        type="button"
+        title="Download final spreadsheet"
+      >
+        <Download size={16} />
+        Export
+      </button>
     </div>
     </header>
   );
