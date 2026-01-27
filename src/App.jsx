@@ -2708,7 +2708,7 @@ export default function App() {
 
       const keywordColumn = 'keyword';
       const dedupStageKey = 'deduplicated';
-      const sourceCount = workingSource.count || 0;
+      const dedupSourceCount = workingSource.count || 0;
       const keywordColumns = workingSource.type === 'memory'
         ? getKeywordColumns(workingSource.rows)
         : await (async () => {
@@ -2775,7 +2775,7 @@ export default function App() {
             handleRow(row);
             if (processed % dedupChunk === 0) {
               await sleep(0);
-              const pct = 35 + (processed / Math.max(1, sourceCount)) * 4; // 35 -> 39
+              const pct = 35 + (processed / Math.max(1, dedupSourceCount)) * 4; // 35 -> 39
               setProgress(Math.min(39, Math.max(35, pct)));
             }
           }
@@ -2893,7 +2893,7 @@ export default function App() {
       let purifiedSpilled = false;
       let purifiedBuffer = [];
       const chunk = 250;
-      const sourceCount = workingSource.count || 0;
+      const purifySourceCount = workingSource.count || 0;
       let processed = 0;
 
       const flushPurifiedBuffer = async () => {
@@ -2942,7 +2942,7 @@ export default function App() {
             processed += 1;
             if (processed % chunk === 0) {
               await sleep(0);
-              const pct = 40 + (processed / Math.max(1, sourceCount)) * 8; // 40 -> 48
+              const pct = 40 + (processed / Math.max(1, purifySourceCount)) * 8; // 40 -> 48
               setProgress(Math.min(48, Math.max(40, pct)));
             }
           }
@@ -3008,7 +3008,7 @@ export default function App() {
       let keptSpilled = false;
       let keptBuffer = [];
       let masterFilterRemoved = 0;
-      const sourceCount = workingSource.count || 0;
+      const filterSourceCount = workingSource.count || 0;
       let processed = 0;
 
       const flushKeptBuffer = async () => {
@@ -3070,7 +3070,7 @@ export default function App() {
             await processRow(rowObj);
             if (processed % chunk === 0) {
               await sleep(0);
-              const pct = 48 + (processed / Math.max(1, sourceCount)) * 7; // 48 -> 55
+              const pct = 48 + (processed / Math.max(1, filterSourceCount)) * 7; // 48 -> 55
               setProgress(Math.min(55, Math.max(48, pct)));
             }
           }
