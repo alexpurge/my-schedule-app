@@ -44,7 +44,6 @@ const DashboardPanel = ({
   dedupRows,
   purifiedRows,
   filteredRows,
-  stageCounts,
   dedupColumn,
   filterColumn,
   finalWorkbookAvailable,
@@ -58,10 +57,10 @@ const DashboardPanel = ({
   abortWatchdogJob,
 }) => {
   const stageReady = {
-    watchdog: rows.length > 0 || stageCounts?.watchdog > 0 || sheetStageAvailability?.watchdog,
-    deduplicated: dedupRows.length > 0 || stageCounts?.deduplicated > 0 || sheetStageAvailability?.deduplicated,
-    purified: purifiedRows.length > 0 || stageCounts?.purified > 0 || sheetStageAvailability?.purified,
-    master_filter: filteredRows.length > 0 || stageCounts?.master_filter > 0 || sheetStageAvailability?.master_filter,
+    watchdog: rows.length > 0 || sheetStageAvailability?.watchdog,
+    deduplicated: dedupRows.length > 0 || sheetStageAvailability?.deduplicated,
+    purified: purifiedRows.length > 0 || sheetStageAvailability?.purified,
+    master_filter: filteredRows.length > 0 || sheetStageAvailability?.master_filter,
   };
 
   const hasRecentSheets = Array.isArray(recentSheets) && recentSheets.length > 0;
