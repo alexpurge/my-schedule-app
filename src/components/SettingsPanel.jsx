@@ -52,6 +52,7 @@ const SettingsPanel = ({
   presetMatchMode,
   memorySaver,
   setMemorySaver,
+  safeMode,
   sheetSyncEnabled,
   sheetTabPrefix,
   setSheetTabPrefix,
@@ -195,7 +196,7 @@ const SettingsPanel = ({
                 type="checkbox"
                 checked={sheetAutoClear}
                 onChange={(e) => setSheetAutoClear(e.target.checked)}
-                disabled={!sheetSyncEnabled || isRunning}
+                disabled={!sheetSyncEnabled || isRunning || safeMode}
               />
               <span className="switchSlider" />
             </label>
@@ -308,7 +309,7 @@ const SettingsPanel = ({
                 type="checkbox"
                 checked={memorySaver}
                 onChange={(e) => setMemorySaver(e.target.checked)}
-                disabled={isRunning}
+                disabled={isRunning || safeMode}
               />
               <span className="switchSlider" />
             </label>
