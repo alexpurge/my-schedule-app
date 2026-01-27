@@ -50,6 +50,8 @@ const SettingsPanel = ({
   presetFilterColumn,
   presetUrlColumn,
   presetMatchMode,
+  memorySaver,
+  setMemorySaver,
   sheetSyncEnabled,
   sheetTabPrefix,
   setSheetTabPrefix,
@@ -278,6 +280,42 @@ const SettingsPanel = ({
               <b>Reminder:</b> Share the spreadsheet with the service account email above so it can write to new tabs.
             </div>
           )}
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 16 }}>
+        <div className="cardHeader">
+          <div className="cardHeaderTitle">
+            <Settings size={16} style={{ color: 'var(--color-primary)' }} />
+            Stability
+          </div>
+          <div className="cardHeaderTitle" style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
+            Slow it down to prevent crashes after bulk initial pull
+          </div>
+        </div>
+        <div className="cardBody">
+          <div className="toggleRow">
+            <div className="toggleMeta">
+              <div className="toggleLabel">Memory Saver</div>
+              <div className="toggleHint">
+                {memorySaver
+                  ? 'Processing rows one-by-one in dedup, foreign language, category filter, and AU sorter.'
+                  : 'Process in larger batches (faster, higher memory use).'}
+              </div>
+            </div>
+            <label className="switch">
+              <input
+                type="checkbox"
+                checked={memorySaver}
+                onChange={(e) => setMemorySaver(e.target.checked)}
+                disabled={isRunning}
+              />
+              <span className="switchSlider" />
+            </label>
+          </div>
+          <div className="smallNote" style={{ marginTop: 12 }}>
+            When enabled, local stage snapshots may be cleared sooner to reduce memory pressure.
+          </div>
         </div>
       </div>
 
