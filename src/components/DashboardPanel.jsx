@@ -369,7 +369,7 @@ const DashboardPanel = ({
                 className="btn btnSmall"
                 type="button"
                 style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
-                onClick={() => downloadMasterCsv(filteredRows)}
+                onClick={downloadMasterCsv}
                 disabled={!masterReady}
                 title="Download master CSV (pre-profile puller)"
               >

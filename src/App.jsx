@@ -1253,18 +1253,15 @@ export default function App() {
     });
   }, [setWatchdogJobsSafe]);
 
-  const downloadMasterCsv = useCallback(
-    async (dataRows) => {
-      if (!headers.length || !dataRows?.length) return;
-      const csv = buildCsvContent(headers, dataRows);
-      const date = new Date().toISOString().slice(0, 10);
-      const filename = `${sourceBaseName || 'pipeline'}_master_${date}.csv`;
-      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-      downloadBlob(blob, filename);
-      addLog(`Downloaded: ${filename}`, 'success');
-    },
-    [addLog, headers, sourceBaseName]
-  );
+  const downloadMasterCsv = useCallback(() => {
+    if (!headers.length || !filteredRows.length) return;
+    const csv = buildCsvContent(headers, filteredRows);
+    const date = new Date().toISOString().slice(0, 10);
+    const filename = `${sourceBaseName || 'pipeline'}_master_${date}.csv`;
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    downloadBlob(blob, filename);
+    addLog(`Downloaded: ${filename}`, 'success');
+  }, [addLog, headers, filteredRows, sourceBaseName]);
 
   /**
    * ============================================================
@@ -2372,9 +2369,6 @@ export default function App() {
     runWatchdogAndProcessRows,
     sourceBaseName,
     urlColumn,
-    setDedupRows,
-    setFilteredRows,
-    setPurifiedRows,
     watchdogMaxConcurrency,
   ]);
 
