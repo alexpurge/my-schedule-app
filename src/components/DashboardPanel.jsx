@@ -17,6 +17,8 @@ const DashboardPanel = ({
   dateViolationStreakLimit,
   setDateViolationStreakLimit,
   defaultDateViolationStreakLimit,
+  safeMode,
+  setSafeMode,
   watchdogMaxItems,
   setWatchdogMaxItems,
   watchdogMaxConcurrency,
@@ -206,7 +208,22 @@ const DashboardPanel = ({
                 disabled={isRunning}
               />
             </div>
-            <div />
+            <div className="toggleRow" style={{ marginTop: 0 }}>
+              <div className="toggleMeta">
+                <div className="toggleLabel">Safe Mode</div>
+                <div className="toggleHint">
+                  {safeMode ? 'On' : 'Off'} • Reduces crashes by running slower and clearing memory.
+                </div>
+              </div>
+              <label className="switch">
+                <input
+                  type="checkbox"
+                  checked={safeMode}
+                  onChange={(e) => setSafeMode(e.target.checked)}
+                />
+                <span className="switchSlider" />
+              </label>
+            </div>
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>

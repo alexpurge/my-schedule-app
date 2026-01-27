@@ -8,6 +8,7 @@ import Sidebar from './components/Sidebar';
 import TopHeader from './components/TopHeader';
 
 const DEFAULT_DATE_VIOLATION_STREAK_LIMIT = 5;
+const SAFE_MODE_PREVIEW_LIMIT = 50;
 
 /**
  * ============================================================
@@ -966,6 +967,13 @@ export default function App() {
       return false;
     }
   });
+  const [safeMode, setSafeMode] = useState(() => {
+    try {
+      return localStorage.getItem('pipeline_safe_mode') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   /**
    * ============================================================
@@ -1039,10 +1047,25 @@ export default function App() {
       localStorage.setItem('pipeline_sheet_mode', sheetAppendMode);
       localStorage.setItem('pipeline_sheet_auto_clear', String(sheetAutoClear));
       localStorage.setItem('pipeline_memory_saver', String(memorySaver));
+      localStorage.setItem('pipeline_safe_mode', String(safeMode));
     } catch {
       /* ignore */
     }
-  }, [memorySaver, sheetAppendMode, sheetAutoClear, sheetSpreadsheetId, sheetSyncEnabled, sheetTabPrefix]);
+  }, [
+    memorySaver,
+    safeMode,
+    sheetAppendMode,
+    sheetAutoClear,
+    sheetSpreadsheetId,
+    sheetSyncEnabled,
+    sheetTabPrefix,
+  ]);
+
+  useEffect(() => {
+    if (!safeMode) return;
+    setMemorySaver(true);
+    setSheetAutoClear(true);
+  }, [safeMode, setMemorySaver, setSheetAutoClear]);
 
   const sheetsRequest = useCallback(
     async ({ path, method = 'POST', body, accessToken }) => {
@@ -1366,6 +1389,10 @@ export default function App() {
   const [purifiedRows, setPurifiedRows] = useState([]);
   const [filteredRows, setFilteredRows] = useState([]);
   const [sourceBaseName, setSourceBaseName] = useState('pipeline');
+  const rowsRef = useRef([]);
+  const dedupRowsRef = useRef([]);
+  const purifiedRowsRef = useRef([]);
+  const filteredRowsRef = useRef([]);
 
   /**
    * ============================================================
@@ -1387,6 +1414,8 @@ export default function App() {
    */
   const [logs, setLogs] = useState([]);
   const logRef = useRef(null);
+  const logBufferRef = useRef([]);
+  const logFlushTimerRef = useRef(null);
 
   useEffect(() => {
     if (logRef.current) logRef.current.scrollTop = logRef.current.scrollHeight;
@@ -1394,8 +1423,38 @@ export default function App() {
 
   const addLog = useCallback((message, type = 'info') => {
     const timestamp = new Date().toLocaleTimeString();
+    if (safeMode) {
+      logBufferRef.current.push({ message, type, timestamp });
+      if (logBufferRef.current.length >= 50) {
+        const pending = logBufferRef.current.slice();
+        logBufferRef.current = [];
+        setLogs((prev) => [...prev, ...pending]);
+      }
+      return;
+    }
     setLogs((prev) => [...prev, { message, type, timestamp }]);
-  }, []);
+  }, [safeMode]);
+
+  useEffect(() => {
+    if (!safeMode) return;
+    logFlushTimerRef.current = window.setInterval(() => {
+      if (!logBufferRef.current.length) return;
+      const pending = logBufferRef.current.slice();
+      logBufferRef.current = [];
+      setLogs((prev) => [...prev, ...pending]);
+    }, 250);
+    return () => {
+      if (logFlushTimerRef.current) {
+        window.clearInterval(logFlushTimerRef.current);
+        logFlushTimerRef.current = null;
+      }
+      if (logBufferRef.current.length) {
+        const pending = logBufferRef.current.slice();
+        logBufferRef.current = [];
+        setLogs((prev) => [...prev, ...pending]);
+      }
+    };
+  }, [safeMode]);
 
   const buildSheetTitle = useCallback(
     (stageKeyOrLabel) => {
@@ -1413,6 +1472,7 @@ export default function App() {
       if (!stageHeaders.length) return false;
 
       const sheetTitle = buildSheetTitle(stageKey);
+      const stageLabel = SHEET_STAGE_LABELS[stageKey] || sheetTitle;
       let accessToken = null;
       try {
         accessToken = await ensureSheetsAccessToken('consent');
@@ -1421,48 +1481,71 @@ export default function App() {
         return false;
       }
 
-      let res = await sheetsRequest({
-        path: '/sheets/sync',
-        body: {
-          spreadsheetId: sheetSpreadsheetId.trim(),
-          sheetTitle,
-          headers: stageHeaders,
-          rows: stageRows,
-          mode: sheetAppendMode,
-        },
-        accessToken,
-      });
+      const sendSyncRequest = async (rowsChunk) => {
+        let res = await sheetsRequest({
+          path: '/sheets/sync',
+          body: {
+            spreadsheetId: sheetSpreadsheetId.trim(),
+            sheetTitle,
+            headers: stageHeaders,
+            rows: rowsChunk,
+            mode: sheetAppendMode,
+          },
+          accessToken,
+        });
 
-      if (!res.ok && (res.status === 401 || res.status === 403)) {
-        try {
-          accessToken = await requestSheetsAccessToken('consent');
-          res = await sheetsRequest({
-            path: '/sheets/sync',
-            body: {
-              spreadsheetId: sheetSpreadsheetId.trim(),
-              sheetTitle,
-              headers: stageHeaders,
-              rows: stageRows,
-              mode: sheetAppendMode,
-            },
-            accessToken,
-          });
-        } catch {
-          addLog('Google Sheets authorization expired. Please sign in again.', 'error');
-          return false;
+        if (!res.ok && (res.status === 401 || res.status === 403)) {
+          try {
+            accessToken = await requestSheetsAccessToken('consent');
+            res = await sheetsRequest({
+              path: '/sheets/sync',
+              body: {
+                spreadsheetId: sheetSpreadsheetId.trim(),
+                sheetTitle,
+                headers: stageHeaders,
+                rows: rowsChunk,
+                mode: sheetAppendMode,
+              },
+              accessToken,
+            });
+          } catch {
+            addLog('Google Sheets authorization expired. Please sign in again.', 'error');
+            return { ok: false, status: 401 };
+          }
         }
+
+        return res;
+      };
+
+      if (safeMode && stageRows.length > 0) {
+        const chunkSize = 2000;
+        const totalBatches = Math.ceil(stageRows.length / chunkSize);
+        for (let idx = 0; idx < totalBatches; idx += 1) {
+          const start = idx * chunkSize;
+          const chunk = stageRows.slice(start, start + chunkSize);
+          setStatus(`Syncing ${stageLabel}: batch ${idx + 1} of ${totalBatches}...`);
+          addLog(`Google Sheets: syncing ${stageLabel} batch ${idx + 1}/${totalBatches} (${chunk.length} rows).`, 'info');
+          const res = await sendSyncRequest(chunk);
+          if (!res.ok) {
+            addLog(`Google Sheets sync failed for "${sheetTitle}" (${res.status}).`, 'error');
+            return false;
+          }
+          await sleep(0);
+        }
+
+        setSheetStageAvailability((prev) => ({ ...prev, [stageKey]: true }));
+        addLog(`Google Sheets: synced ${stageRows.length} row(s) to "${sheetTitle}".`, 'success');
+        return true;
       }
 
+      const res = await sendSyncRequest(stageRows);
       if (res.ok) {
         setSheetStageAvailability((prev) => ({ ...prev, [stageKey]: true }));
         addLog(`Google Sheets: synced ${stageRows.length} row(s) to "${sheetTitle}".`, 'success');
         return true;
       }
 
-      addLog(
-        `Google Sheets sync failed for "${sheetTitle}" (${res.status}).`,
-        'error'
-      );
+      addLog(`Google Sheets sync failed for "${sheetTitle}" (${res.status}).`, 'error');
       return false;
     },
     [
@@ -1470,10 +1553,12 @@ export default function App() {
       buildSheetTitle,
       ensureSheetsAccessToken,
       requestSheetsAccessToken,
+      safeMode,
       sheetAppendMode,
       sheetSpreadsheetId,
       sheetSyncReady,
       sheetsRequest,
+      setStatus,
     ]
   );
 
@@ -1548,6 +1633,7 @@ export default function App() {
    * ============================================================
    */
   const [finalWorkbook, setFinalWorkbook] = useState(null);
+  const finalWorkbookRef = useRef(null);
 
   const [stats, setStats] = useState({
     // Watchdog stats
@@ -1610,6 +1696,10 @@ export default function App() {
     setPurifiedRows([]);
     setFilteredRows([]);
     setSourceBaseName('pipeline');
+    rowsRef.current = [];
+    dedupRowsRef.current = [];
+    purifiedRowsRef.current = [];
+    filteredRowsRef.current = [];
 
     setIsRunning(false);
     setStage('idle');
@@ -1621,6 +1711,7 @@ export default function App() {
     setBatchProgress({ total: 0, completed: 0, active: 0 });
 
     setFinalWorkbook(null);
+    finalWorkbookRef.current = null;
 
     setWatchdogJobsSafe([]);
     setWatchdogExporting(false);
@@ -1672,6 +1763,12 @@ export default function App() {
     async (stageKey, dataRows) => {
       let csvHeaders = headers;
       let csvRows = dataRows;
+      if (safeMode && (!csvRows || csvRows.length <= SAFE_MODE_PREVIEW_LIMIT)) {
+        if (stageKey === 'watchdog') csvRows = rowsRef.current;
+        if (stageKey === 'deduplicated') csvRows = dedupRowsRef.current;
+        if (stageKey === 'purified') csvRows = purifiedRowsRef.current;
+        if (stageKey === 'master_filter') csvRows = filteredRowsRef.current;
+      }
       if ((!csvHeaders.length || !csvRows.length) && sheetSyncReady) {
         const remote = await fetchStageFromSheets(stageKey);
         if (remote) {
@@ -1688,7 +1785,7 @@ export default function App() {
       downloadBlob(blob, filename);
       addLog(`Downloaded: ${filename}`, 'success');
     },
-    [addLog, fetchStageFromSheets, headers, sheetSyncReady, sourceBaseName]
+    [addLog, fetchStageFromSheets, headers, safeMode, sheetSyncReady, sourceBaseName]
   );
 
   /**
@@ -2165,12 +2262,16 @@ export default function App() {
     const DATA_BATCH = 2;
     const DATA_PAGE_SIZE = 200;
     const allRows = [];
+    const liteFieldSet = safeMode
+      ? new Set([dedupColumn, filterColumn, urlColumn, 'keyword'].filter(Boolean))
+      : null;
     let processedCount = 0;
 
     for (let i = 0; i < jobsWithData.length; i += DATA_BATCH) {
       const batch = jobsWithData.slice(i, i + DATA_BATCH);
 
-      for (const job of batch) {
+      for (let jobIndex = 0; jobIndex < batch.length; jobIndex += 1) {
+        const job = batch[jobIndex];
         try {
           for (let offset = 0; ; offset += DATA_PAGE_SIZE) {
             if (stopRef.current) break;
@@ -2188,12 +2289,25 @@ export default function App() {
               const enriched = { ...item, keyword: job.keyword };
               const flattened = flattenRecord(enriched);
 
-              for (const fieldName of exportedHeaders) {
-                const val = flattened[fieldName] ?? '';
-                rowObj[fieldName] = safeToString(val).replace(/\r?\n/g, ' ');
+              if (safeMode) {
+                liteFieldSet.forEach((fieldName) => {
+                  const val = flattened[fieldName] ?? '';
+                  rowObj[fieldName] = safeToString(val).replace(/\r?\n/g, ' ');
+                });
+              } else {
+                for (const fieldName of exportedHeaders) {
+                  const val = flattened[fieldName] ?? '';
+                  rowObj[fieldName] = safeToString(val).replace(/\r?\n/g, ' ');
+                }
               }
 
               allRows.push(rowObj);
+              if (safeMode && allRows.length % 500 === 0) {
+                setWatchdogExportStatus(
+                  `Dataset ${i + jobIndex + 1}/${jobsWithData.length}: ${allRows.length} row(s) so far...`
+                );
+                await sleep(0);
+              }
             }
 
             if (items.length < DATA_PAGE_SIZE) break;
@@ -2201,10 +2315,19 @@ export default function App() {
         } catch {
           /* ignore */
         }
+        if (safeMode) {
+          setWatchdogExportStatus(
+            `Dataset ${i + jobIndex + 1}/${jobsWithData.length}: ${allRows.length} row(s) so far...`
+          );
+        }
       }
 
       processedCount += batch.length;
-      setWatchdogExportStatus(`Processed ${processedCount}/${jobsWithData.length} datasets...`);
+      setWatchdogExportStatus(
+        safeMode
+          ? `Processed ${processedCount}/${jobsWithData.length} datasets • ${allRows.length} row(s)...`
+          : `Processed ${processedCount}/${jobsWithData.length} datasets...`
+      );
       // UI progress export 25 -> 35
       setProgress(25 + (processedCount / Math.max(1, jobsWithData.length)) * 10);
 
@@ -2219,7 +2342,8 @@ export default function App() {
 
     // Store exported "CSV" (internally) as pipeline input
     setHeaders(exportedHeaders);
-    setRows(allRows);
+    rowsRef.current = allRows;
+    setRows(safeMode ? allRows.slice(0, SAFE_MODE_PREVIEW_LIMIT) : allRows);
     setSourceBaseName(`watchdog_export_${new Date().toISOString().slice(0, 10)}`);
 
     setStats((s) => ({
@@ -2238,6 +2362,7 @@ export default function App() {
 
     if (sheetSyncReady && sheetAutoClear && watchdogSynced) {
       setRows([]);
+      rowsRef.current = [];
     }
 
     return { exportedHeaders, allRows, watchdogSynced };
@@ -2246,14 +2371,18 @@ export default function App() {
     addLog,
     allowSet,
     apifyRequest,
+    dedupColumn,
     dateViolationEnabled,
     dateViolationStreakLimit,
+    filterColumn,
     memory,
+    safeMode,
     setWatchdogJobsSafe,
     sheetAutoClear,
     sheetSyncReady,
     syncStageToSheets,
     updateWatchdogJob,
+    urlColumn,
     watchdogActiveStatus,
     watchdogActorId,
     watchdogCountry,
@@ -2495,6 +2624,11 @@ export default function App() {
     setDedupRows([]);
     setPurifiedRows([]);
     setFilteredRows([]);
+    rowsRef.current = [];
+    dedupRowsRef.current = [];
+    purifiedRowsRef.current = [];
+    filteredRowsRef.current = [];
+    finalWorkbookRef.current = null;
     setSheetStageAvailability({
       watchdog: false,
       deduplicated: false,
@@ -2512,6 +2646,9 @@ export default function App() {
     setStatus('Running Bulk Initial Pull...');
     setProgress(1);
     addLog('--- PIPELINE START ---', 'system');
+    if (safeMode) {
+      addLog('Safe Mode enabled: crash-prevention safeguards active (slower, lower memory).', 'warning');
+    }
     if (memorySaver) {
       addLog('Memory Saver enabled: processing rows sequentially to reduce crashes.', 'warning');
     }
@@ -2556,7 +2693,7 @@ export default function App() {
       let maxKeywords = 0;
       let dupRemoved = 0;
 
-      const dedupChunk = memorySaver ? 1 : 400;
+      const dedupChunk = safeMode ? 100 : memorySaver ? 1 : 400;
       for (let i = 0; i < workingRows.length; i += 1) {
         if (stopRef.current) throw new Error('Stopped by user.');
         const row = workingRows[i];
@@ -2579,17 +2716,22 @@ export default function App() {
           await sleep(0);
           const pct = 35 + (i / Math.max(1, workingRows.length)) * 4; // 35 -> 39
           setProgress(Math.min(39, Math.max(35, pct)));
+          if (safeMode) {
+            setStatus(`Deduplicating CSV... ${i}/${workingRows.length}`);
+          }
         }
       }
 
-      if (memorySaver) {
+      if (safeMode || memorySaver) {
         workingRows.length = 0;
         setRows([]);
+        rowsRef.current = [];
       }
 
       if (sheetSyncReady && sheetAutoClear && watchdogSynced) {
         workingRows.length = 0;
         setRows([]);
+        rowsRef.current = [];
       }
 
       for (const { row, keywords } of dedupedMap.values()) {
@@ -2600,6 +2742,10 @@ export default function App() {
           row[`${keywordColumn}_${i + 1}`] = list[i];
         }
         deduped.push(row);
+      }
+      if (safeMode) {
+        seen.clear();
+        dedupedMap.clear();
       }
 
       if (maxKeywords > 1) {
@@ -2618,7 +2764,10 @@ export default function App() {
         dedupRemoved: dupRemoved,
         afterDedup: deduped.length,
       }));
-      if (memorySaver) {
+      if (safeMode) {
+        dedupRowsRef.current = deduped;
+        setDedupRows(deduped.slice(0, SAFE_MODE_PREVIEW_LIMIT));
+      } else if (memorySaver) {
         setDedupRows([]);
       } else {
         setDedupRows(deduped);
@@ -2647,7 +2796,7 @@ export default function App() {
 
       const purified = [];
       let purifierRemoved = 0;
-      const chunk = memorySaver ? 1 : 250;
+      const purifyChunk = safeMode ? 100 : memorySaver ? 1 : 250;
 
       for (let i = 0; i < deduped.length; i++) {
         if (stopRef.current) throw new Error('Stopped by user.');
@@ -2655,10 +2804,13 @@ export default function App() {
         if (rowHasForeignScript(rowObj)) purifierRemoved++;
         else purified.push(rowObj);
 
-        if (i % chunk === 0) {
+        if (i % purifyChunk === 0) {
           await sleep(0);
           const pct = 40 + (i / Math.max(1, deduped.length)) * 8; // 40 -> 48
           setProgress(Math.min(48, Math.max(40, pct)));
+          if (safeMode) {
+            setStatus(`Purifying... ${i}/${deduped.length}`);
+          }
         }
       }
 
@@ -2667,7 +2819,10 @@ export default function App() {
         purifierRemoved,
         afterPurify: purified.length,
       }));
-      if (memorySaver) {
+      if (safeMode) {
+        purifiedRowsRef.current = purified;
+        setPurifiedRows(purified.slice(0, SAFE_MODE_PREVIEW_LIMIT));
+      } else if (memorySaver) {
         setPurifiedRows([]);
       } else {
         setPurifiedRows(purified);
@@ -2687,11 +2842,13 @@ export default function App() {
       if (sheetSyncReady && sheetAutoClear && purifiedSynced) {
         deduped.length = 0;
         setDedupRows([]);
+        dedupRowsRef.current = [];
       }
 
-      if (memorySaver) {
+      if (safeMode || memorySaver) {
         deduped.length = 0;
         setDedupRows([]);
+        dedupRowsRef.current = [];
       }
 
       workingRows = purified;
@@ -2705,6 +2862,7 @@ export default function App() {
 
       const kept = [];
       let masterFilterRemoved = 0;
+      const filterChunk = safeMode ? 100 : memorySaver ? 1 : 250;
 
       if (matchMode === 'contains') {
         const keywords = Array.from(allowSet);
@@ -2714,14 +2872,28 @@ export default function App() {
           const raw = safeToString(rowObj[filterColumn]).trim();
           const val = raw.toLowerCase();
 
-          const hit = keywords.some((k) => k && val.includes(k));
+          let hit = false;
+          if (safeMode) {
+            for (let k = 0; k < keywords.length; k += 1) {
+              const keyword = keywords[k];
+              if (keyword && val.includes(keyword)) {
+                hit = true;
+                break;
+              }
+            }
+          } else {
+            hit = keywords.some((k) => k && val.includes(k));
+          }
           if (hit) kept.push(rowObj);
           else masterFilterRemoved++;
 
-          if (i % chunk === 0) {
+          if (i % filterChunk === 0) {
             await sleep(0);
             const pct = 48 + (i / Math.max(1, workingRows.length)) * 7; // 48 -> 55
             setProgress(Math.min(55, Math.max(48, pct)));
+            if (safeMode) {
+              setStatus(`Category Filtering... ${i}/${workingRows.length}`);
+            }
           }
         }
       } else {
@@ -2734,10 +2906,13 @@ export default function App() {
           if (allowSet.has(val)) kept.push(rowObj);
           else masterFilterRemoved++;
 
-          if (i % chunk === 0) {
+          if (i % filterChunk === 0) {
             await sleep(0);
             const pct = 48 + (i / Math.max(1, workingRows.length)) * 7; // 48 -> 55
             setProgress(Math.min(55, Math.max(48, pct)));
+            if (safeMode) {
+              setStatus(`Category Filtering... ${i}/${workingRows.length}`);
+            }
           }
         }
       }
@@ -2747,7 +2922,10 @@ export default function App() {
         masterFilterRemoved,
         afterMasterFilter: kept.length,
       }));
-      if (memorySaver) {
+      if (safeMode) {
+        filteredRowsRef.current = kept;
+        setFilteredRows(kept.slice(0, SAFE_MODE_PREVIEW_LIMIT));
+      } else if (memorySaver) {
         setFilteredRows([]);
       } else {
         setFilteredRows(kept);
@@ -2767,11 +2945,13 @@ export default function App() {
       if (sheetSyncReady && sheetAutoClear && filterSynced) {
         purified.length = 0;
         setPurifiedRows([]);
+        purifiedRowsRef.current = [];
       }
 
-      if (memorySaver) {
+      if (safeMode || memorySaver) {
         purified.length = 0;
         setPurifiedRows([]);
+        purifiedRowsRef.current = [];
       }
 
       workingRows = kept;
@@ -2797,11 +2977,13 @@ export default function App() {
       if (sheetSyncReady && sheetAutoClear && filterSynced) {
         workingRows.length = 0;
         setFilteredRows([]);
+        filteredRowsRef.current = [];
       }
 
-      if (memorySaver) {
+      if (safeMode || memorySaver) {
         workingRows.length = 0;
         setFilteredRows([]);
+        filteredRowsRef.current = [];
       }
 
       addLog(`Apify: extracted ${allUrls.length} URL(s) from "${urlColumn}".`, 'info');
@@ -2901,6 +3083,9 @@ export default function App() {
           addLog(`Failed to fetch dataset ${dsId} (${res.status}).`, 'error');
         }
 
+        if (safeMode) {
+          setStatus(`Fetching Apify datasets... ${i + 1}/${validIds.length} (${allItems.length} items)`);
+        }
         const pct = 80 + ((i + 1) / validIds.length) * 10; // 80 -> 90
         setProgress(Math.min(90, Math.max(80, pct)));
         await sleep(0);
@@ -2910,6 +3095,9 @@ export default function App() {
 
       setStats((s) => ({ ...s, apifyItems: allItems.length }));
       addLog(`Apify: merged ${allItems.length} total record(s).`, 'success');
+      if (safeMode) {
+        urlKeywordMap.clear();
+      }
 
       // -----------------------------
       // 6) AU NUMBER SORTER
@@ -2950,7 +3138,7 @@ export default function App() {
       const landlineList = [];
       const otherList = [];
 
-      const sortChunk = memorySaver ? 1 : 250;
+      const sortChunk = safeMode ? 100 : memorySaver ? 1 : 250;
 
       for (let idx = 0; idx < allItems.length; idx++) {
         if (stopRef.current) throw new Error('Stopped by user.');
@@ -2993,14 +3181,17 @@ export default function App() {
           await sleep(0);
           const pct = 92 + (idx / Math.max(1, allItems.length)) * 6; // 92 -> 98
           setProgress(Math.min(98, Math.max(92, pct)));
+          if (safeMode) {
+            setStatus(`Sorting numbers... ${idx}/${allItems.length}`);
+          }
         }
 
-        if (memorySaver) {
+        if (safeMode || memorySaver) {
           allItems[idx] = null;
         }
       }
 
-      if (memorySaver) {
+      if (safeMode || memorySaver) {
         allItems.length = 0;
       }
 
@@ -3041,12 +3232,19 @@ export default function App() {
 
       const finalSynced = finalSyncResults.every(Boolean);
 
-      setFinalWorkbook(sheetSyncReady && sheetAutoClear && finalSynced ? null : finalWorkbookPayload);
+      if (safeMode) {
+        finalWorkbookRef.current =
+          sheetSyncReady && sheetAutoClear && finalSynced ? null : finalWorkbookPayload;
+        setFinalWorkbook(null);
+      } else {
+        setFinalWorkbook(sheetSyncReady && sheetAutoClear && finalSynced ? null : finalWorkbookPayload);
+      }
 
       if (sheetSyncReady && sheetAutoClear && finalSynced) {
         mobileList.length = 0;
         landlineList.length = 0;
         otherList.length = 0;
+        finalWorkbookRef.current = null;
       }
 
       addLog('--- PIPELINE COMPLETE ---', 'success');
@@ -3082,6 +3280,7 @@ export default function App() {
     syncStageToSheets,
     urlColumn,
     memorySaver,
+    safeMode,
     setDedupRows,
     setFilteredRows,
     setPurifiedRows,
@@ -3099,7 +3298,7 @@ export default function App() {
       addLog('Download disabled while Reduce local memory usage is enabled.', 'warning');
       return;
     }
-    let workbook = finalWorkbook;
+    let workbook = safeMode ? finalWorkbookRef.current : finalWorkbook;
 
     if (!workbook && sheetSyncReady) {
       const [mobiles, landlines, others] = await Promise.all([
@@ -3143,7 +3342,7 @@ export default function App() {
     downloadBlob(blob, filename);
 
     addLog(`Downloaded: ${filename}`, 'success');
-  }, [addLog, fetchStageFromSheets, finalWorkbook, headers, sheetAutoClear, sheetSyncReady, sourceBaseName]);
+  }, [addLog, fetchStageFromSheets, finalWorkbook, headers, safeMode, sheetAutoClear, sheetSyncReady, sourceBaseName]);
 
   /**
    * ============================================================
@@ -3175,7 +3374,7 @@ export default function App() {
 
   const finalWorkbookAvailable =
     !sheetAutoClear &&
-    (Boolean(finalWorkbook) ||
+    (Boolean(safeMode ? finalWorkbookRef.current : finalWorkbook) ||
       (sheetSyncReady &&
         (sheetStageAvailability.mobiles || sheetStageAvailability.landlines || sheetStageAvailability.others)));
 
@@ -3289,6 +3488,7 @@ export default function App() {
                 presetMatchMode={PRESET_MATCH_MODE}
                 memorySaver={memorySaver}
                 setMemorySaver={setMemorySaver}
+                safeMode={safeMode}
                 sheetSyncEnabled={sheetSyncEnabled}
                 sheetTabPrefix={sheetTabPrefix}
                 setSheetTabPrefix={setSheetTabPrefix}
@@ -3328,6 +3528,8 @@ export default function App() {
                 dateViolationStreakLimit={dateViolationStreakLimit}
                 setDateViolationStreakLimit={setDateViolationStreakLimit}
                 defaultDateViolationStreakLimit={DEFAULT_DATE_VIOLATION_STREAK_LIMIT}
+                safeMode={safeMode}
+                setSafeMode={setSafeMode}
                 watchdogMaxItems={watchdogMaxItems}
                 setWatchdogMaxItems={setWatchdogMaxItems}
                 watchdogMaxConcurrency={watchdogMaxConcurrency}
