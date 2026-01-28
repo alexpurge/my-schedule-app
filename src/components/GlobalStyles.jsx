@@ -53,6 +53,46 @@ const GlobalStyles = () => (
   --shadow-md: 0 8px 18px rgba(15,23,42,.06);
 }
 
+.appShell{
+  --bg-canvas: #f5f5f7;
+  --bg-sidebar: rgba(255,255,255,.88);
+  --bg-surface: rgba(255,255,255,.92);
+  --bg-input: rgba(255,255,255,.86);
+  --border-color: rgba(15,23,42,.08);
+
+  --text-main: #0b0c10;
+  --text-muted: #5b6472;
+  --text-subtle: #8b95a6;
+
+  --color-primary: #0a84ff;
+
+  --radius-xl: 26px;
+  --radius-lg: 20px;
+  --radius-md: 16px;
+
+  --shadow-xl: 0 30px 60px rgba(15,23,42,.12);
+  --shadow-lg: 0 18px 36px rgba(15,23,42,.12);
+  --shadow-md: 0 10px 24px rgba(15,23,42,.10);
+
+  font-family: "SF Pro Text", "SF Pro Display", -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+}
+
+[data-theme='dark'] .appShell{
+  --bg-canvas: #0b0d12;
+  --bg-sidebar: rgba(18,18,24,.9);
+  --bg-surface: rgba(20,20,28,.9);
+  --bg-input: rgba(32,32,42,.82);
+  --border-color: rgba(255,255,255,.08);
+
+  --text-main: #f8fafc;
+  --text-muted: #c4cad4;
+  --text-subtle: #7b879b;
+
+  --shadow-xl: 0 24px 48px rgba(0,0,0,.45);
+  --shadow-lg: 0 18px 36px rgba(0,0,0,.4);
+  --shadow-md: 0 12px 24px rgba(0,0,0,.35);
+}
+
 *{ box-sizing: border-box; }
 html, body { height: 100%; }
 body{
@@ -303,7 +343,7 @@ input:-webkit-autofill:active{
 }
 
 .brand{
-  height: 72px;
+  height: 84px;
   display:flex;
   align-items:center;
   gap: 10px;
@@ -311,9 +351,9 @@ input:-webkit-autofill:active{
   border-bottom: 1px solid var(--border-color);
 }
 .brandLogo{
-  width: 44px;
-  height: 44px;
-  border-radius: 14px;
+  width: 66px;
+  height: 66px;
+  border-radius: 18px;
   display:flex;
   align-items:center;
   justify-content:center;
@@ -1243,6 +1283,258 @@ transform: scale(1.5);
 .badge.warn{ border-color: rgba(245,158,11,.25); background: rgba(245,158,11,.10); color: #f59e0b; }
 .badge.fail{ border-color: rgba(239,68,68,.25); background: rgba(239,68,68,.10); color: #ef4444; }
 .badge.pending{ border-color: rgba(148,163,184,.25); background: rgba(148,163,184,.10); color: var(--text-subtle); }
+
+.appShell .sidebar{
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-color);
+  backdrop-filter: blur(20px);
+}
+.appShell .brand{
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 85%, transparent);
+}
+.appShell .nav{
+  padding-top: 12px;
+}
+.appShell .navItem{
+  margin: 4px 12px;
+  border-radius: 14px;
+  padding: 10px 14px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.appShell .navItem:hover{
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+  color: var(--text-main);
+}
+.appShell .navItemActive{
+  background: color-mix(in srgb, var(--color-primary) 14%, transparent);
+  color: var(--text-main);
+}
+.appShell .navItemActive::before,
+.appShell .navItemActive::after{
+  content: none;
+}
+.appShell .navItemActive .navIcon{
+  color: var(--color-primary);
+}
+.appShell .navIcon{
+  color: var(--text-subtle);
+}
+.appShell .sidebarFooter{
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 85%, transparent);
+}
+
+.appShell .main{
+  background: linear-gradient(180deg, color-mix(in srgb, var(--bg-canvas) 98%, white), var(--bg-canvas));
+}
+.appShell .topHeader{
+  height: 68px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-canvas) 88%, transparent);
+  backdrop-filter: blur(16px);
+}
+.appShell .headerTitle{
+  font-weight: 600;
+  font-size: 17px;
+}
+.appShell .headerSep{
+  background: color-mix(in srgb, var(--border-color) 75%, transparent);
+}
+
+.appShell .pill{
+  border-radius: 999px;
+  font-weight: 600;
+  letter-spacing: .08em;
+}
+
+.appShell .btn{
+  border-radius: 999px;
+  text-transform: none;
+  letter-spacing: .01em;
+  font-weight: 600;
+  box-shadow: none;
+  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+}
+.appShell .btn:hover{
+  border-color: color-mix(in srgb, var(--color-primary) 35%, var(--border-color));
+  color: var(--text-main);
+  box-shadow: 0 6px 18px rgba(15,23,42,.12);
+}
+.appShell .btnPrimary{
+  background: linear-gradient(180deg, color-mix(in srgb, var(--color-primary) 88%, #fff), var(--color-primary));
+  border-color: transparent;
+  box-shadow: 0 12px 26px rgba(10,132,255,.25);
+}
+.appShell .btnPrimary:hover{
+  filter: brightness(1.02);
+}
+.appShell .btnSmall{
+  font-size: 11px;
+}
+
+.appShell .label{
+  font-size: 11px;
+  text-transform: none;
+  letter-spacing: .02em;
+  color: var(--text-muted);
+}
+.appShell .input,
+.appShell .select,
+.appShell .textarea{
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 90%, transparent);
+  background: color-mix(in srgb, var(--bg-input) 94%, transparent);
+  font-size: 13px;
+  box-shadow: inset 0 1px 2px rgba(15,23,42,.08);
+}
+.appShell .input:focus,
+.appShell .select:focus,
+.appShell .textarea:focus{
+  border-color: color-mix(in srgb, var(--color-primary) 60%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+.appShell .textarea{
+  min-height: 130px;
+}
+.appShell .toggleRow{
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-input) 92%, transparent);
+}
+
+.appShell .dashboardPanel{
+  border-radius: 28px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
+  box-shadow: var(--shadow-lg);
+}
+.appShell .dashboardCard{
+  border-radius: 20px;
+  background: color-mix(in srgb, var(--bg-input) 88%, transparent);
+}
+.appShell .dashboardCardValue{
+  font-weight: 600;
+}
+.appShell .dashboardStatus{
+  background: color-mix(in srgb, var(--bg-surface) 90%, transparent);
+  border-color: color-mix(in srgb, var(--border-color) 80%, transparent);
+}
+
+.appShell .card{
+  border-radius: 24px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
+  box-shadow: var(--shadow-md);
+}
+.appShell .cardHeader{
+  padding: 16px 20px;
+}
+.appShell .cardHeaderTitle{
+  text-transform: none;
+  letter-spacing: .02em;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+.appShell .cardAccent::before{
+  width: 3px;
+  border-radius: 999px;
+}
+
+.disclosure{
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+  background: color-mix(in srgb, var(--bg-input) 90%, transparent);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+.disclosureSummary{
+  list-style: none;
+  cursor: pointer;
+  padding: 14px 16px;
+  display:flex;
+  align-items:center;
+  justify-content: space-between;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .14em;
+}
+.disclosureSummary::-webkit-details-marker{
+  display: none;
+}
+.disclosureSummary::after{
+  content: '›';
+  font-size: 16px;
+  color: var(--text-subtle);
+  transform: rotate(0deg);
+  transition: transform .2s ease;
+}
+.disclosure[open] .disclosureSummary{
+  color: var(--text-main);
+}
+.disclosure[open] .disclosureSummary::after{
+  transform: rotate(90deg);
+}
+.disclosureBody{
+  padding: 12px 16px 16px;
+  border-top: 1px solid color-mix(in srgb, var(--border-color) 70%, transparent);
+}
+.disclosureMeta{
+  font-size: 10px;
+  color: var(--text-subtle);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.appShell .tiles{
+  gap: 10px;
+}
+.appShell .tile{
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border-color) 80%, transparent);
+}
+.appShell .tileK{
+  letter-spacing: .1em;
+}
+.appShell .tileV{
+  font-weight: 600;
+}
+.appShell .tileSub{
+  font-family: inherit;
+  font-size: 11px;
+}
+
+.appShell .breakItem{
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-surface) 94%, transparent);
+}
+.appShell .breakH{
+  font-weight: 600;
+}
+.appShell .mono{
+  font-family: "SF Mono", "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","Courier New", monospace;
+}
+.appShell .sortPill{
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-input) 92%, transparent);
+}
+
+.appShell .consoleBody{
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-input) 94%, transparent);
+}
+.appShell .tableWrap{
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--bg-input) 94%, transparent);
+}
+.appShell .th{
+  background: color-mix(in srgb, var(--bg-input) 90%, transparent);
+}
+.appShell .badge{
+  border-radius: 999px;
+  font-weight: 600;
+}
 
 .spin{ animation: spin 1s linear infinite; }
 @keyframes spin{ to { transform: rotate(360deg); } }

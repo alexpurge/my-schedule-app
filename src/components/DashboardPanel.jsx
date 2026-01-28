@@ -289,137 +289,158 @@ const DashboardPanel = ({
         </div>
 
         <div className="cardBody">
-          <div className="tiles">
-            <div className="tile">
-              <div className="tileK">Bulk Initial Pull Rows</div>
-              <div className="tileV">{stats.watchdogExportedRows}</div>
-              <div className="tileSub">Auto-exported into pipeline</div>
-            </div>
+          <details className="disclosure">
+            <summary className="disclosureSummary">
+              Snapshot totals
+              <span className="disclosureMeta">3 cards</span>
+            </summary>
+            <div className="disclosureBody">
+              <div className="tiles">
+                <div className="tile">
+                  <div className="tileK">Bulk Initial Pull Rows</div>
+                  <div className="tileV">{stats.watchdogExportedRows}</div>
+                  <div className="tileSub">Auto-exported into pipeline</div>
+                </div>
 
-            <div className="tile">
-              <div className="tileK">Filtered Out</div>
-              <div className="tileV red">{filteredOutTotal}</div>
-              <div className="tileSub">Dedup + Foreign Language + Category</div>
-            </div>
+                <div className="tile">
+                  <div className="tileK">Filtered Out</div>
+                  <div className="tileV red">{filteredOutTotal}</div>
+                  <div className="tileSub">Dedup + Foreign Language + Category</div>
+                </div>
 
-            <div className="tile">
-              <div className="tileK">Apify Records</div>
-              <div className="tileV orange">{stats.apifyItems}</div>
-              <div className="tileSub">Merged dataset items</div>
-            </div>
-          </div>
-
-          <div className="breakGrid">
-            <div className="breakItem">
-              <div className="breakH">Bulk Initial Pull</div>
-              <div className="breakLine">
-                <span>Keywords</span> <span className="mono">{stats.watchdogKeywords}</span>
-              </div>
-            <div className="breakLine" style={{ marginTop: 8 }}>
-              <span>Jobs</span>
-              <span className="mono">
-                {stats.watchdogSucceeded} ok / {stats.watchdogFailed} fail / {stats.watchdogAborted} aborted
-              </span>
-            </div>
-          </div>
-
-          <div className="breakItem">
-            <div className="breakH">Deduplicator</div>
-              <div className="breakLine">
-                <span>Removed</span> <span className="mono">{stats.dedupRemoved}</span>
-              </div>
-              <div className="breakLine" style={{ marginTop: 8 }}>
-                <span>Remaining</span> <span className="mono">{stats.afterDedup}</span>
-              </div>
-            </div>
-
-            <div className="breakItem">
-              <div className="breakH">Foreign Language Detector</div>
-              <div className="breakLine">
-                <span>Removed</span> <span className="mono">{stats.purifierRemoved}</span>
-              </div>
-              <div className="breakLine" style={{ marginTop: 8 }}>
-                <span>Remaining</span> <span className="mono">{stats.afterPurify}</span>
-              </div>
-            </div>
-
-            <div className="breakItem">
-              <div className="breakH">Category Filter</div>
-              <div className="breakLine">
-                <span>Removed</span> <span className="mono">{stats.masterFilterRemoved}</span>
-              </div>
-              <div className="breakLine" style={{ marginTop: 8 }}>
-                <span>Remaining</span> <span className="mono">{stats.afterMasterFilter}</span>
-              </div>
-            </div>
-
-            <div className="breakItem">
-              <div className="breakH">Pre-Pulled Master</div>
-              <div className="breakLine">
-                <span>Rows</span> <span className="mono">{stats.afterMasterFilter}</span>
-              </div>
-              <div className="breakLine" style={{ marginTop: 8 }}>
-                <span>Status</span>
-                <span className="mono">{prePullReady ? 'Ready' : 'Pending'}</span>
-              </div>
-              <button
-                className="btn btnSmall"
-                type="button"
-                style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
-                onClick={() => downloadCsvSnapshot('pre_pulled_master', filteredRows)}
-                disabled={!prePullReady}
-                title="Download pre-pulled master CSV"
-              >
-                <Download size={14} />
-                Download CSV
-              </button>
-            </div>
-
-            <div className="breakItem">
-              <div className="breakH">Profile Puller</div>
-              <div className="breakLine">
-                <span>URLs</span> <span className="mono">{stats.urlsForApify}</span>
-              </div>
-              <div className="breakLine" style={{ marginTop: 8 }}>
-                <span>Batches</span>
-                <span className="mono">
-                  {stats.batchesSucceeded} ok / {stats.batchesFailed} fail
-                </span>
-              </div>
-            </div>
-
-            <div className="breakItem">
-              <div className="breakH">Settings</div>
-              <div className="breakLine">
-                <span>Dedup</span> <span className="mono">{dedupColumn}</span>
-              </div>
-              <div className="breakLine" style={{ marginTop: 8 }}>
-                <span>Filter</span> <span className="mono">{filterColumn}</span>
-              </div>
-            </div>
-          </div>
-
-          <div className="breakItem" style={{ marginTop: 12 }}>
-            <div className="breakH">AU Number Sorter</div>
-            <div className="sortPills">
-              <div className="sortPill">
-                <div className="sortK">Mobiles</div>
-                <div className="sortV" style={{ color: '#10b981' }}>
-                  {stats.sorterMobile}
+                <div className="tile">
+                  <div className="tileK">Apify Records</div>
+                  <div className="tileV orange">{stats.apifyItems}</div>
+                  <div className="tileSub">Merged dataset items</div>
                 </div>
               </div>
-              <div className="sortPill">
-                <div className="sortK">Landlines</div>
-                <div className="sortV" style={{ color: 'var(--color-primary)' }}>
-                  {stats.sorterLandline}
+            </div>
+          </details>
+
+          <details className="disclosure">
+            <summary className="disclosureSummary">
+              Pipeline stages
+              <span className="disclosureMeta">7 modules</span>
+            </summary>
+            <div className="disclosureBody">
+              <div className="breakGrid">
+                <div className="breakItem">
+                  <div className="breakH">Bulk Initial Pull</div>
+                  <div className="breakLine">
+                    <span>Keywords</span> <span className="mono">{stats.watchdogKeywords}</span>
+                  </div>
+                  <div className="breakLine" style={{ marginTop: 8 }}>
+                    <span>Jobs</span>
+                    <span className="mono">
+                      {stats.watchdogSucceeded} ok / {stats.watchdogFailed} fail / {stats.watchdogAborted} aborted
+                    </span>
+                  </div>
+                </div>
+
+                <div className="breakItem">
+                  <div className="breakH">Deduplicator</div>
+                  <div className="breakLine">
+                    <span>Removed</span> <span className="mono">{stats.dedupRemoved}</span>
+                  </div>
+                  <div className="breakLine" style={{ marginTop: 8 }}>
+                    <span>Remaining</span> <span className="mono">{stats.afterDedup}</span>
+                  </div>
+                </div>
+
+                <div className="breakItem">
+                  <div className="breakH">Foreign Language Detector</div>
+                  <div className="breakLine">
+                    <span>Removed</span> <span className="mono">{stats.purifierRemoved}</span>
+                  </div>
+                  <div className="breakLine" style={{ marginTop: 8 }}>
+                    <span>Remaining</span> <span className="mono">{stats.afterPurify}</span>
+                  </div>
+                </div>
+
+                <div className="breakItem">
+                  <div className="breakH">Category Filter</div>
+                  <div className="breakLine">
+                    <span>Removed</span> <span className="mono">{stats.masterFilterRemoved}</span>
+                  </div>
+                  <div className="breakLine" style={{ marginTop: 8 }}>
+                    <span>Remaining</span> <span className="mono">{stats.afterMasterFilter}</span>
+                  </div>
+                </div>
+
+                <div className="breakItem">
+                  <div className="breakH">Pre-Pulled Master</div>
+                  <div className="breakLine">
+                    <span>Rows</span> <span className="mono">{stats.afterMasterFilter}</span>
+                  </div>
+                  <div className="breakLine" style={{ marginTop: 8 }}>
+                    <span>Status</span>
+                    <span className="mono">{prePullReady ? 'Ready' : 'Pending'}</span>
+                  </div>
+                  <button
+                    className="btn btnSmall"
+                    type="button"
+                    style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
+                    onClick={() => downloadCsvSnapshot('pre_pulled_master', filteredRows)}
+                    disabled={!prePullReady}
+                    title="Download pre-pulled master CSV"
+                  >
+                    <Download size={14} />
+                    Download CSV
+                  </button>
+                </div>
+
+                <div className="breakItem">
+                  <div className="breakH">Profile Puller</div>
+                  <div className="breakLine">
+                    <span>URLs</span> <span className="mono">{stats.urlsForApify}</span>
+                  </div>
+                  <div className="breakLine" style={{ marginTop: 8 }}>
+                    <span>Batches</span>
+                    <span className="mono">
+                      {stats.batchesSucceeded} ok / {stats.batchesFailed} fail
+                    </span>
+                  </div>
+                </div>
+
+                <div className="breakItem">
+                  <div className="breakH">Settings</div>
+                  <div className="breakLine">
+                    <span>Dedup</span> <span className="mono">{dedupColumn}</span>
+                  </div>
+                  <div className="breakLine" style={{ marginTop: 8 }}>
+                    <span>Filter</span> <span className="mono">{filterColumn}</span>
+                  </div>
                 </div>
               </div>
-              <div className="sortPill">
-                <div className="sortK">Others</div>
-                <div className="sortV">{stats.sorterOther}</div>
+            </div>
+          </details>
+
+          <details className="disclosure">
+            <summary className="disclosureSummary">
+              AU number sorter
+              <span className="disclosureMeta">3 buckets</span>
+            </summary>
+            <div className="disclosureBody">
+              <div className="sortPills">
+                <div className="sortPill">
+                  <div className="sortK">Mobiles</div>
+                  <div className="sortV" style={{ color: '#10b981' }}>
+                    {stats.sorterMobile}
+                  </div>
+                </div>
+                <div className="sortPill">
+                  <div className="sortK">Landlines</div>
+                  <div className="sortV" style={{ color: 'var(--color-primary)' }}>
+                    {stats.sorterLandline}
+                  </div>
+                </div>
+                <div className="sortPill">
+                  <div className="sortK">Others</div>
+                  <div className="sortV">{stats.sorterOther}</div>
+                </div>
               </div>
             </div>
-          </div>
+          </details>
 
           <button
             className="btn"
@@ -479,23 +500,31 @@ const DashboardPanel = ({
         </div>
 
         <div className="cardBody">
-          <div className="tiles" style={{ marginBottom: 12 }}>
-            <div className="tile">
-              <div className="tileK">Total</div>
-              <div className="tileV">{watchdogUiStats.total}</div>
-              <div className="tileSub">Keywords queued</div>
+          <details className="disclosure">
+            <summary className="disclosureSummary">
+              Queue totals
+              <span className="disclosureMeta">3 cards</span>
+            </summary>
+            <div className="disclosureBody">
+              <div className="tiles">
+                <div className="tile">
+                  <div className="tileK">Total</div>
+                  <div className="tileV">{watchdogUiStats.total}</div>
+                  <div className="tileSub">Keywords queued</div>
+                </div>
+                <div className="tile">
+                  <div className="tileK">Running</div>
+                  <div className="tileV orange">{watchdogUiStats.running}</div>
+                  <div className="tileSub">Starting / Running</div>
+                </div>
+                <div className="tile">
+                  <div className="tileK">Retrying</div>
+                  <div className="tileV">{watchdogUiStats.retrying}</div>
+                  <div className="tileSub">Queued retries</div>
+                </div>
+              </div>
             </div>
-            <div className="tile">
-              <div className="tileK">Running</div>
-              <div className="tileV orange">{watchdogUiStats.running}</div>
-              <div className="tileSub">Starting / Running</div>
-            </div>
-            <div className="tile">
-              <div className="tileK">Retrying</div>
-              <div className="tileV">{watchdogUiStats.retrying}</div>
-              <div className="tileSub">Queued retries</div>
-            </div>
-          </div>
+          </details>
 
           <div className="tableWrap" style={{ maxHeight: 340 }}>
             <table className="table">

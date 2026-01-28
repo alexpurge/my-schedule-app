@@ -2499,7 +2499,7 @@ export default function App() {
   }
 
   return (
-    <div className="pipelineShell" data-theme={theme}>
+    <div className="pipelineShell appShell" data-theme={theme}>
       <GlobalStyles />
       {showWelcomeOverlay && (
         <div className={welcomeOverlayClassName} aria-live="polite" aria-label="Welcome message">
