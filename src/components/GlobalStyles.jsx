@@ -915,6 +915,35 @@ transform: scale(1.5);
   width: 4px;
   background: var(--color-primary);
 }
+.bulkPullCard .cardHeader{
+  padding: 12px 16px;
+}
+.bulkPullBody{
+  padding: 16px;
+}
+.bulkPullBody .label{
+  margin-left: 2px;
+  margin-bottom: 6px;
+}
+.bulkPullBody .input,
+.bulkPullBody .select,
+.bulkPullBody .textarea{
+  padding: 9px 10px;
+  font-size: 12px;
+}
+.bulkPullBody .textarea{
+  min-height: 110px;
+  font-size: 12px;
+}
+.bulkPullGrid{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+@media (max-width: 860px){
+  .bulkPullGrid{ grid-template-columns: 1fr; }
+}
 
 .label{
   display:block;
@@ -1296,6 +1325,9 @@ transform: scale(1.5);
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono","CourierNew", monospace;
   font-size: 11px;
   line-height: 1.45;
+}
+.advancedConsoleBody{
+  max-height: 220px;
 }
 .logLine{
   display:flex;
