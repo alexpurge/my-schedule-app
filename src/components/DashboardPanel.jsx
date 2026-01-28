@@ -45,6 +45,70 @@ const DashboardPanel = ({
   watchdogJobs,
   abortWatchdogJob,
 }) => {
+  const [pullHistory, setPullHistory] = React.useState([]);
+  const lastStageRef = React.useRef(stage);
+  const lastRunningRef = React.useRef(isRunning);
+  const [activePull, setActivePull] = React.useState(null);
+
+  React.useEffect(() => {
+    if (!lastRunningRef.current && isRunning) {
+      setActivePull({
+        id: `active-${Date.now()}`,
+        startedAt: new Date().toLocaleString(),
+      });
+    }
+    lastRunningRef.current = isRunning;
+  }, [isRunning]);
+
+  React.useEffect(() => {
+    if (lastStageRef.current !== stage && stage === 'done') {
+      const timestamp = new Date().toLocaleString();
+      setPullHistory((prev) => [
+        {
+          id: `pull-${Date.now()}`,
+          status: 'Complete',
+          timestamp,
+          stats: { ...stats },
+          filteredOutTotal,
+          keywordCount,
+          prePullReady,
+          dedupColumn,
+          filterColumn,
+          finalWorkbookAvailable,
+        },
+        ...prev,
+      ]);
+      setActivePull(null);
+    }
+    lastStageRef.current = stage;
+  }, [
+    stage,
+    stats,
+    filteredOutTotal,
+    keywordCount,
+    prePullReady,
+    dedupColumn,
+    filterColumn,
+    finalWorkbookAvailable,
+  ]);
+
+  const activeEntry = activePull
+    ? {
+        id: activePull.id,
+        status: 'In progress',
+        timestamp: activePull.startedAt,
+        stats,
+        filteredOutTotal,
+        keywordCount,
+        prePullReady,
+        dedupColumn,
+        filterColumn,
+        finalWorkbookAvailable,
+        isActive: true,
+      }
+    : null;
+
+  const historyEntries = activeEntry ? [activeEntry, ...pullHistory] : pullHistory;
   return (
     <div className="grid">
     {/* LEFT COLUMN */}
@@ -276,12 +340,12 @@ const DashboardPanel = ({
 
     {/* RIGHT COLUMN */}
     <div className="rightCol">
-      {/* Summary */}
+      {/* Pull History */}
       <div className="card" style={{ boxShadow: 'var(--shadow-xl)' }}>
         <div className="cardHeader">
           <div className="cardHeaderTitle">
             <Filter size={16} style={{ color: 'var(--color-primary)' }} />
-            Pipeline Summary
+            Pull History
           </div>
           <div className="cardHeaderTitle" style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
             {keywordCount} category filter keywords loaded
@@ -289,6 +353,7 @@ const DashboardPanel = ({
         </div>
 
         <div className="cardBody">
+<<<<<<< HEAD
           <div className="tiles">
             <div className="tile">
               <div className="tileK">Bulk Initial Pull Rows</div>
@@ -439,8 +504,204 @@ const DashboardPanel = ({
                 <Download size={16} />
                 Download (available after completion)
               </>
+=======
+          <div className="historyList">
+            {historyEntries.length === 0 && (
+              <div className="historyEmpty">No pull history yet. Run the pipeline to start tracking runs.</div>
+>>>>>>> ac28a0acb0ec64b5c1acaed4c0c3ba1352b34f0c
             )}
-          </button>
+
+            {historyEntries.map((entry, index) => {
+              const entryStats = entry.stats || {};
+              const title = entry.isActive ? 'Current Pull' : `Pull ${historyEntries.length - index}`;
+              const statusLabel = entry.status || (entry.isActive ? 'In progress' : 'Complete');
+              return (
+                <div key={entry.id} className="historyItem">
+                  <div className="historyHeader">
+                    <div>
+                      <div className="historyTitle">{title}</div>
+                      <div className="historyMeta">
+                        {statusLabel} • {entry.timestamp}
+                      </div>
+                    </div>
+                    <div className="historyStats">
+                      <div className="historyStat">
+                        <span>Bulk pull rows</span>
+                        <strong>{entryStats.watchdogExportedRows}</strong>
+                      </div>
+                      <div className="historyStat">
+                        <span>Filtered out</span>
+                        <strong className="summaryNegative">{entry.filteredOutTotal}</strong>
+                      </div>
+                      <div className="historyStat">
+                        <span>Apify records</span>
+                        <strong>{entryStats.apifyItems}</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  <details className="disclosure historyDisclosure">
+                    <summary>View pull details</summary>
+                    <div className="disclosureBody">
+                      <div className="tiles">
+                        <div className="tile">
+                          <div className="tileK">Bulk Initial Pull Rows</div>
+                          <div className="tileV">{entryStats.watchdogExportedRows}</div>
+                          <div className="tileSub">Auto-exported into pipeline</div>
+                        </div>
+
+                        <div className="tile">
+                          <div className="tileK">Filtered Out</div>
+                          <div className="tileV red">{entry.filteredOutTotal}</div>
+                          <div className="tileSub">Dedup + Foreign Language + Category</div>
+                        </div>
+
+                        <div className="tile">
+                          <div className="tileK">Apify Records</div>
+                          <div className="tileV orange">{entryStats.apifyItems}</div>
+                          <div className="tileSub">Merged dataset items</div>
+                        </div>
+                      </div>
+
+                      <div className="breakGrid">
+                        <div className="breakItem">
+                          <div className="breakH">Bulk Initial Pull</div>
+                          <div className="breakLine">
+                            <span>Keywords</span> <span className="mono">{entryStats.watchdogKeywords}</span>
+                          </div>
+                          <div className="breakLine" style={{ marginTop: 8 }}>
+                            <span>Jobs</span>
+                            <span className="mono">
+                              {entryStats.watchdogSucceeded} ok / {entryStats.watchdogFailed} fail / {entryStats.watchdogAborted} aborted
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="breakItem">
+                          <div className="breakH">Deduplicator</div>
+                          <div className="breakLine">
+                            <span>Removed</span> <span className="mono">{entryStats.dedupRemoved}</span>
+                          </div>
+                          <div className="breakLine" style={{ marginTop: 8 }}>
+                            <span>Remaining</span> <span className="mono">{entryStats.afterDedup}</span>
+                          </div>
+                        </div>
+
+                        <div className="breakItem">
+                          <div className="breakH">Foreign Language Detector</div>
+                          <div className="breakLine">
+                            <span>Removed</span> <span className="mono">{entryStats.purifierRemoved}</span>
+                          </div>
+                          <div className="breakLine" style={{ marginTop: 8 }}>
+                            <span>Remaining</span> <span className="mono">{entryStats.afterPurify}</span>
+                          </div>
+                        </div>
+
+                        <div className="breakItem">
+                          <div className="breakH">Category Filter</div>
+                          <div className="breakLine">
+                            <span>Removed</span> <span className="mono">{entryStats.masterFilterRemoved}</span>
+                          </div>
+                          <div className="breakLine" style={{ marginTop: 8 }}>
+                            <span>Remaining</span> <span className="mono">{entryStats.afterMasterFilter}</span>
+                          </div>
+                        </div>
+
+                        <div className="breakItem">
+                          <div className="breakH">Pre-Pulled Master</div>
+                          <div className="breakLine">
+                            <span>Rows</span> <span className="mono">{entryStats.afterMasterFilter}</span>
+                          </div>
+                          <div className="breakLine" style={{ marginTop: 8 }}>
+                            <span>Status</span>
+                            <span className="mono">{entry.prePullReady ? 'Ready' : 'Pending'}</span>
+                          </div>
+                          <button
+                            className="btn btnSmall"
+                            type="button"
+                            style={{ marginTop: 10, width: '100%', justifyContent: 'center' }}
+                            onClick={() => downloadCsvSnapshot('pre_pulled_master', filteredRows)}
+                            disabled={!entry.prePullReady}
+                            title="Download pre-pulled master CSV"
+                          >
+                            <Download size={14} />
+                            Download CSV
+                          </button>
+                        </div>
+
+                        <div className="breakItem">
+                          <div className="breakH">Profile Puller</div>
+                          <div className="breakLine">
+                            <span>URLs</span> <span className="mono">{entryStats.urlsForApify}</span>
+                          </div>
+                          <div className="breakLine" style={{ marginTop: 8 }}>
+                            <span>Batches</span>
+                            <span className="mono">
+                              {entryStats.batchesSucceeded} ok / {entryStats.batchesFailed} fail
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="breakItem">
+                          <div className="breakH">Settings</div>
+                          <div className="breakLine">
+                            <span>Dedup</span> <span className="mono">{entry.dedupColumn}</span>
+                          </div>
+                          <div className="breakLine" style={{ marginTop: 8 }}>
+                            <span>Filter</span> <span className="mono">{entry.filterColumn}</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="breakItem" style={{ marginTop: 12 }}>
+                        <div className="breakH">AU Number Sorter</div>
+                        <div className="sortPills">
+                          <div className="sortPill">
+                            <div className="sortK">Mobiles</div>
+                            <div className="sortV" style={{ color: '#10b981' }}>
+                              {entryStats.sorterMobile}
+                            </div>
+                          </div>
+                          <div className="sortPill">
+                            <div className="sortK">Landlines</div>
+                            <div className="sortV" style={{ color: 'var(--color-primary)' }}>
+                              {entryStats.sorterLandline}
+                            </div>
+                          </div>
+                          <div className="sortPill">
+                            <div className="sortK">Others</div>
+                            <div className="sortV">{entryStats.sorterOther}</div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="historyActions">
+                        <button
+                          className="btn btnSmall"
+                          type="button"
+                          onClick={downloadFinalSpreadsheet}
+                          disabled={!entry.finalWorkbookAvailable}
+                          title="Download final spreadsheet"
+                        >
+                          {entry.finalWorkbookAvailable ? (
+                            <>
+                              <FileDown size={14} />
+                              Download Final Spreadsheet
+                            </>
+                          ) : (
+                            <>
+                              <Download size={14} />
+                              Download (after completion)
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </details>
+                </div>
+              );
+            })}
+          </div>
 
           {error && (
             <div className="notice" style={{ marginTop: 14 }}>
