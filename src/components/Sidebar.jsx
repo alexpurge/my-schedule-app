@@ -4,12 +4,12 @@ import { LayoutDashboard, Layers, Settings, Sun, Moon } from 'lucide-react';
 const Sidebar = ({ activeTab, onTabChange, theme, onToggleTheme }) => (
   <aside className="sidebar">
     <div className="brand">
-      <div className="brandLogo" title="Purge Digital">
-        <img className="brandLogoImage" src="https://i.imgur.com/QjjDjuU.png" alt="Purge Digital logo" />
+      <div className="brandLogo" title="The Scraper">
+        <img className="brandLogoImage" src="https://i.imgur.com/QjjDjuU.png" alt="The Scraper logo" />
       </div>
       <div className="brandTitle">
-        <span className="brandTitleStrong">Purge</span>
-        <span className="brandTitleLight">Digital</span>
+        <span className="brandTitleStrong">The</span>
+        <span className="brandTitleLight">Scraper</span>
       </div>
     </div>
 
