@@ -137,39 +137,6 @@ const DashboardPanel = ({
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
             <div>
-              <label className="label">Target Country</label>
-              <select
-                className="select"
-                value={watchdogCountry}
-                onChange={(e) => setWatchdogCountry(e.target.value)}
-                disabled={isRunning}
-              >
-                <option value="ALL">All Countries</option>
-                <option value="AU">Australia</option>
-                <option value="US">United States</option>
-                <option value="GB">United Kingdom</option>
-                <option value="CA">Canada</option>
-                <option value="DE">Germany</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="label">Active Status</label>
-              <select
-                className="select"
-                value={watchdogActiveStatus}
-                onChange={(e) => setWatchdogActiveStatus(e.target.value)}
-                disabled={isRunning}
-              >
-                <option value="active">Active Only</option>
-                <option value="inactive">Inactive Only</option>
-                <option value="all">All</option>
-              </select>
-            </div>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
-            <div>
               <label className="label">Minimum Date (Required)</label>
               <input
                 className="input"
@@ -181,59 +148,6 @@ const DashboardPanel = ({
             </div>
 
             <div>
-              <label className="label">Maximum Date (Optional)</label>
-              <input
-                className="input"
-                type="date"
-                value={watchdogMaxDate}
-                onChange={(e) => setWatchdogMaxDate(e.target.value)}
-                disabled={isRunning}
-              />
-            </div>
-          </div>
-
-          <div className="toggleRow" style={{ marginTop: 14 }}>
-            <div className="toggleMeta">
-              <div className="toggleLabel">Date Violation Guard</div>
-              <div className="toggleHint">
-                {dateViolationEnabled ? 'On' : 'Off'} • Abort after {dateViolationStreakLimit} consecutive day-before-minimum dates
-              </div>
-            </div>
-            <label className="switch">
-              <input
-                type="checkbox"
-                checked={dateViolationEnabled}
-                onChange={(e) => setDateViolationEnabled(e.target.checked)}
-              />
-              <span className="switchSlider" />
-            </label>
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 12 }}>
-            <div>
-              <label className="label">Abort After X Consecutive Days</label>
-              <input
-                className="input"
-                type="number"
-                min="1"
-                step="1"
-                value={dateViolationStreakLimit}
-                onChange={(e) => {
-                  const nextValue = Number(e.target.value);
-                  if (!Number.isFinite(nextValue)) {
-                    setDateViolationStreakLimit(defaultDateViolationStreakLimit);
-                    return;
-                  }
-                  setDateViolationStreakLimit(Math.max(1, Math.floor(nextValue)));
-                }}
-                disabled={isRunning}
-              />
-            </div>
-            <div />
-          </div>
-
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
-            <div>
               <label className="label">Max Items</label>
               <input
                 className="input"
@@ -243,46 +157,137 @@ const DashboardPanel = ({
                 disabled={isRunning}
               />
             </div>
-
-            <div>
-              <label className="label">Concurrency</label>
-              <input
-                className="input"
-                type="number"
-                value={watchdogMaxConcurrency}
-                onChange={(e) => {
-                  const v = Number(e.target.value) || 1;
-                  setWatchdogMaxConcurrency(Math.min(100, Math.max(1, v)));
-                }}
-                disabled={isRunning}
-              />
-            </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
-            <div>
-              <label className="label">Max Runtime (Minutes)</label>
-              <input
-                className="input"
-                type="number"
-                value={watchdogMaxRuntime}
-                onChange={(e) => setWatchdogMaxRuntime(e.target.value)}
-                disabled={isRunning}
-                placeholder="(optional)"
-              />
-            </div>
+          <details className="disclosure" style={{ marginTop: 16 }}>
+            <summary>Advanced Settings</summary>
+            <div className="disclosureBody">
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label className="label">Target Country</label>
+                  <select
+                    className="select"
+                    value={watchdogCountry}
+                    onChange={(e) => setWatchdogCountry(e.target.value)}
+                    disabled={isRunning}
+                  >
+                    <option value="ALL">All Countries</option>
+                    <option value="AU">Australia</option>
+                    <option value="US">United States</option>
+                    <option value="GB">United Kingdom</option>
+                    <option value="CA">Canada</option>
+                    <option value="DE">Germany</option>
+                  </select>
+                </div>
 
-            <div>
-              <label className="label">Memory Limit (MB)</label>
-              <input
-                className="input"
-                type="number"
-                value={memory}
-                onChange={(e) => setMemory(Number(e.target.value) || 0)}
-                disabled={isRunning}
-              />
+                <div>
+                  <label className="label">Active Status</label>
+                  <select
+                    className="select"
+                    value={watchdogActiveStatus}
+                    onChange={(e) => setWatchdogActiveStatus(e.target.value)}
+                    disabled={isRunning}
+                  >
+                    <option value="active">Active Only</option>
+                    <option value="inactive">Inactive Only</option>
+                    <option value="all">All</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label className="label">Maximum Date (Optional)</label>
+                  <input
+                    className="input"
+                    type="date"
+                    value={watchdogMaxDate}
+                    onChange={(e) => setWatchdogMaxDate(e.target.value)}
+                    disabled={isRunning}
+                  />
+                </div>
+
+                <div>
+                  <label className="label">Max Runtime (Minutes)</label>
+                  <input
+                    className="input"
+                    type="number"
+                    value={watchdogMaxRuntime}
+                    onChange={(e) => setWatchdogMaxRuntime(e.target.value)}
+                    disabled={isRunning}
+                    placeholder="(optional)"
+                  />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label className="label">Concurrency</label>
+                  <input
+                    className="input"
+                    type="number"
+                    value={watchdogMaxConcurrency}
+                    onChange={(e) => {
+                      const v = Number(e.target.value) || 1;
+                      setWatchdogMaxConcurrency(Math.min(100, Math.max(1, v)));
+                    }}
+                    disabled={isRunning}
+                  />
+                </div>
+
+                <div>
+                  <label className="label">Memory Limit (MB)</label>
+                  <input
+                    className="input"
+                    type="number"
+                    value={memory}
+                    onChange={(e) => setMemory(Number(e.target.value) || 0)}
+                    disabled={isRunning}
+                  />
+                </div>
+              </div>
+
+              <div className="toggleRow">
+                <div className="toggleMeta">
+                  <div className="toggleLabel">Date Violation Guard</div>
+                  <div className="toggleHint">
+                    {dateViolationEnabled ? 'On' : 'Off'} • Abort after {dateViolationStreakLimit} consecutive day-before-minimum
+                    dates
+                  </div>
+                </div>
+                <label className="switch">
+                  <input
+                    type="checkbox"
+                    checked={dateViolationEnabled}
+                    onChange={(e) => setDateViolationEnabled(e.target.checked)}
+                  />
+                  <span className="switchSlider" />
+                </label>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
+                <div>
+                  <label className="label">Abort After X Consecutive Days</label>
+                  <input
+                    className="input"
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={dateViolationStreakLimit}
+                    onChange={(e) => {
+                      const nextValue = Number(e.target.value);
+                      if (!Number.isFinite(nextValue)) {
+                        setDateViolationStreakLimit(defaultDateViolationStreakLimit);
+                        return;
+                      }
+                      setDateViolationStreakLimit(Math.max(1, Math.floor(nextValue)));
+                    }}
+                    disabled={isRunning}
+                  />
+                </div>
+              </div>
             </div>
-          </div>
+          </details>
 
           <button
             className="btn btnPrimary"
