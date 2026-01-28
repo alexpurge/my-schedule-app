@@ -12,6 +12,7 @@ const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, "../.env") });
 
 console.log("APIFY_API_KEY loaded:", Boolean(process.env.APIFY_API_KEY));
+const customProxyUrl = process.env.CUSTOM_PROXY_URL;
 
 const app = express();
 
@@ -161,6 +162,33 @@ const logMissingApifyToken = () => {
   console.error("Missing APIFY_API_KEY");
 };
 
+const shouldApplyCustomProxy = (apifyPath, method) => {
+  if (!customProxyUrl) return false;
+  if (!apifyPath) return false;
+  const normalizedMethod = (method || "GET").toUpperCase();
+  if (normalizedMethod !== "POST") return false;
+  return /\/v2\/acts\/.+\/runs\/?$/.test(apifyPath);
+};
+
+const applyCustomProxyConfiguration = (inputBody) => {
+  if (!customProxyUrl) return inputBody;
+  if (!inputBody || typeof inputBody !== "object") return inputBody;
+  const { proxyConfiguration, ...rest } = inputBody;
+  const {
+    apifyProxyGroups: _apifyProxyGroups,
+    proxyUrls: _proxyUrls,
+    ...remainingProxyConfig
+  } = proxyConfiguration && typeof proxyConfiguration === "object" ? proxyConfiguration : {};
+  return {
+    ...rest,
+    proxyConfiguration: {
+      ...remainingProxyConfig,
+      useApifyProxy: false,
+      proxyUrls: [customProxyUrl],
+    },
+  };
+};
+
 app.post("/apify/request", async (req, res) => {
   const { path: apifyPath, method, query, body } = req.body || {};
   if (!apifyPath || typeof apifyPath !== "string") {
@@ -186,14 +214,18 @@ app.post("/apify/request", async (req, res) => {
       });
     }
 
+    const requestBody = shouldApplyCustomProxy(apifyPath, method)
+      ? applyCustomProxyConfiguration(body)
+      : body;
+
     const options = {
       method: (method || "GET").toUpperCase(),
       headers: {},
     };
 
-    if (body !== undefined && body !== null) {
+    if (requestBody !== undefined && requestBody !== null) {
       options.headers["Content-Type"] = "application/json";
-      options.body = JSON.stringify(body);
+      options.body = JSON.stringify(requestBody);
     }
 
     const apifyRes = await fetch(url, options);

@@ -1590,7 +1590,6 @@ export default function App() {
         sortBy: 'mostRecent',
         activeStatus: watchdogActiveStatus,
         advertisers: [],
-        proxyConfiguration: { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'] },
       };
 
       if (watchdogMinDate) inputBody.searchStartDate = watchdogMinDate;
@@ -1884,10 +1883,6 @@ export default function App() {
       try {
         const inputPayload = {
           startUrls: batchUrls,
-          proxyConfiguration: {
-            useApifyProxy: true,
-            apifyProxyGroups: ['RESIDENTIAL'],
-          },
         };
 
         const query = {};
