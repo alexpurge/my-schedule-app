@@ -114,7 +114,7 @@ const DashboardPanel = ({
     {/* LEFT COLUMN */}
     <div className="leftCol">
       {/* Watchdog Config (NEW) */}
-      <div className="card cardAccent" style={{ marginBottom: 16 }}>
+      <div className="card cardAccent bulkPullCard" style={{ marginBottom: 16 }}>
         <div className="cardHeader">
           <div className="cardHeaderTitle">
             <Layers size={16} style={{ color: 'var(--color-primary)' }} />
@@ -125,7 +125,7 @@ const DashboardPanel = ({
           </div>
         </div>
 
-        <div className="cardBody">
+        <div className="cardBody bulkPullBody">
           <label className="label">Keyword list (one per line)</label>
           <textarea
             className="textarea"
@@ -135,7 +135,7 @@ const DashboardPanel = ({
             placeholder={`Keyword 1\nKeyword 2\nKeyword 3`}
           />
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
+          <div className="bulkPullGrid">
             <div>
               <label className="label">Minimum Date (Required)</label>
               <input
@@ -310,41 +310,154 @@ const DashboardPanel = ({
           </button>
         </div>
       </div>
-
-      {/* Console */}
-      <div className="card console">
-        <div className="cardHeader">
-          <div className="cardHeaderTitle">
-            <Layers size={16} style={{ color: 'var(--color-primary)' }} />
-            System Output
-          </div>
-          <div className="cardHeaderTitle" style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
-            {logs.length ? `${logs.length} log line(s)` : 'Waiting for input...'}
-          </div>
-        </div>
-
-        <div className="consoleBody" ref={logRef}>
-          {logs.length === 0 && (
-            <div className="logLine">
-              <span className="logTime">[--:--:--]</span>
-              <span className="logMsg info" style={{ fontStyle: 'italic' }}>
-                System ready. Waiting for input...
-              </span>
-            </div>
-          )}
-
-          {logs.map((log, idx) => (
-            <div key={idx} className="logLine">
-              <span className="logTime">[{log.timestamp}]</span>
-              <span className={`logMsg ${log.type}`}>{log.message}</span>
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
 
     {/* RIGHT COLUMN */}
     <div className="rightCol">
+      {/* Watchdog Queue (preserved functionality: per-job status + stop) */}
+      <div className="card" style={{ marginBottom: 16 }}>
+        <div className="cardHeader">
+          <div className="cardHeaderTitle">
+            <Layers size={16} style={{ color: 'var(--color-primary)' }} />
+            Bulk Initial Pull Queue
+          </div>
+          <div className="cardHeaderTitle" style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
+            {watchdogUiStats.total
+              ? `${watchdogUiStats.succeeded}/${watchdogUiStats.total} complete • ${watchdogUiStats.running} active`
+              : 'No jobs yet'}
+          </div>
+        </div>
+
+        <div className="cardBody">
+          <div className="tiles" style={{ marginBottom: 12 }}>
+            <div className="tile">
+              <div className="tileK">Total</div>
+              <div className="tileV">{watchdogUiStats.total}</div>
+              <div className="tileSub">Keywords queued</div>
+            </div>
+            <div className="tile">
+              <div className="tileK">Running</div>
+              <div className="tileV orange">{watchdogUiStats.running}</div>
+              <div className="tileSub">Starting / Running</div>
+            </div>
+            <div className="tile">
+              <div className="tileK">Retrying</div>
+              <div className="tileV">{watchdogUiStats.retrying}</div>
+              <div className="tileSub">Queued retries</div>
+            </div>
+          </div>
+
+          <div className="tableWrap" style={{ maxHeight: 340 }}>
+            <table className="table">
+              <thead>
+                <tr>
+                  <th className="th">Keyword</th>
+                  <th className="th">Status</th>
+                  <th className="th">Items</th>
+                  <th className="th">Last Date</th>
+                  <th className="th" style={{ textAlign: 'right' }}>
+                    Action
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {watchdogJobs.length === 0 && (
+                  <tr>
+                    <td className="td" colSpan={5} style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>
+                      No bulk initial pull jobs yet. Run the pipeline to start.
+                    </td>
+                  </tr>
+                )}
+
+                {watchdogJobs.map((job) => {
+                  const badgeCls =
+                    job.status === 'RUNNING' || job.status === 'STARTING'
+                      ? 'running'
+                      : job.status === 'SUCCEEDED'
+                      ? 'success'
+                      : job.status === 'PENDING_RETRY'
+                      ? 'warn'
+                      : job.status === 'FAILED' || job.status === 'ABORTED'
+                      ? 'fail'
+                      : 'pending';
+
+                  return (
+                    <tr key={job.id}>
+                      <td className="td">
+                        <div style={{ fontWeight: 900, color: 'var(--text-main)' }}>{job.keyword}</div>
+                        {job.retryCount > 0 && (
+                          <div className="mono" style={{ fontSize: 10, color: 'var(--text-subtle)', marginTop: 4 }}>
+                            Retry {job.retryCount}
+                          </div>
+                        )}
+                        {job.failReason && (
+                          <div className="mono" style={{ fontSize: 10, color: '#fb7185', marginTop: 4 }}>
+                            {job.failReason}
+                          </div>
+                        )}
+                      </td>
+                      <td className="td">
+                        <span className={`badge ${badgeCls}`}>{job.status}</span>
+                      </td>
+                      <td className="td mono">{job.itemCount || 0}</td>
+                      <td className="td mono">{job.lastDate || '-'}</td>
+                      <td className="td" style={{ textAlign: 'right' }}>
+                        {job.status === 'RUNNING' && (
+                          <button
+                            className="btn"
+                            style={{ padding: '7px 10px' }}
+                            type="button"
+                            onClick={() => abortWatchdogJob(job, 'Manual Stop')}
+                          >
+                            <X size={14} />
+                            Stop
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <details className="disclosure" style={{ marginTop: 12 }}>
+            <summary>Advanced View</summary>
+            <div className="disclosureBody">
+              <div className="cardHeader" style={{ padding: 0, border: 'none' }}>
+                <div className="cardHeaderTitle" style={{ fontSize: 11, letterSpacing: '.08em' }}>
+                  System Output
+                </div>
+                <div className="cardHeaderTitle" style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
+                  {logs.length ? `${logs.length} log line(s)` : 'Waiting for input...'}
+                </div>
+              </div>
+              <div className="consoleBody advancedConsoleBody" ref={logRef}>
+                {logs.length === 0 && (
+                  <div className="logLine">
+                    <span className="logTime">[--:--:--]</span>
+                    <span className="logMsg info" style={{ fontStyle: 'italic' }}>
+                      System ready. Waiting for input...
+                    </span>
+                  </div>
+                )}
+
+                {logs.map((log, idx) => (
+                  <div key={idx} className="logLine">
+                    <span className="logTime">[{log.timestamp}]</span>
+                    <span className={`logMsg ${log.type}`}>{log.message}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </details>
+
+          <div className="smallNote">
+            <b>Note:</b> Export happens automatically once all jobs are done (single CSV internally), then the pipeline continues.
+          </div>
+        </div>
+      </div>
+
       {/* Pull History */}
       <div className="card" style={{ boxShadow: 'var(--shadow-xl)' }}>
         <div className="cardHeader">
@@ -577,118 +690,6 @@ const DashboardPanel = ({
         </div>
       </div>
 
-      {/* Watchdog Queue (preserved functionality: per-job status + stop) */}
-      <div className="card" style={{ marginTop: 16 }}>
-        <div className="cardHeader">
-          <div className="cardHeaderTitle">
-            <Layers size={16} style={{ color: 'var(--color-primary)' }} />
-            Bulk Initial Pull Queue
-          </div>
-          <div className="cardHeaderTitle" style={{ textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>
-            {watchdogUiStats.total
-              ? `${watchdogUiStats.succeeded}/${watchdogUiStats.total} complete • ${watchdogUiStats.running} active`
-              : 'No jobs yet'}
-          </div>
-        </div>
-
-        <div className="cardBody">
-          <div className="tiles" style={{ marginBottom: 12 }}>
-            <div className="tile">
-              <div className="tileK">Total</div>
-              <div className="tileV">{watchdogUiStats.total}</div>
-              <div className="tileSub">Keywords queued</div>
-            </div>
-            <div className="tile">
-              <div className="tileK">Running</div>
-              <div className="tileV orange">{watchdogUiStats.running}</div>
-              <div className="tileSub">Starting / Running</div>
-            </div>
-            <div className="tile">
-              <div className="tileK">Retrying</div>
-              <div className="tileV">{watchdogUiStats.retrying}</div>
-              <div className="tileSub">Queued retries</div>
-            </div>
-          </div>
-
-          <div className="tableWrap" style={{ maxHeight: 340 }}>
-            <table className="table">
-              <thead>
-                <tr>
-                  <th className="th">Keyword</th>
-                  <th className="th">Status</th>
-                  <th className="th">Items</th>
-                  <th className="th">Last Date</th>
-                  <th className="th" style={{ textAlign: 'right' }}>
-                    Action
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {watchdogJobs.length === 0 && (
-                  <tr>
-                    <td className="td" colSpan={5} style={{ color: 'var(--text-subtle)', fontStyle: 'italic' }}>
-                      No bulk initial pull jobs yet. Run the pipeline to start.
-                    </td>
-                  </tr>
-                )}
-
-                {watchdogJobs.map((job) => {
-                  const badgeCls =
-                    job.status === 'RUNNING' || job.status === 'STARTING'
-                      ? 'running'
-                      : job.status === 'SUCCEEDED'
-                      ? 'success'
-                      : job.status === 'PENDING_RETRY'
-                      ? 'warn'
-                      : job.status === 'FAILED' || job.status === 'ABORTED'
-                      ? 'fail'
-                      : 'pending';
-
-                  return (
-                    <tr key={job.id}>
-                      <td className="td">
-                        <div style={{ fontWeight: 900, color: 'var(--text-main)' }}>{job.keyword}</div>
-                        {job.retryCount > 0 && (
-                          <div className="mono" style={{ fontSize: 10, color: 'var(--text-subtle)', marginTop: 4 }}>
-                            Retry {job.retryCount}
-                          </div>
-                        )}
-                        {job.failReason && (
-                          <div className="mono" style={{ fontSize: 10, color: '#fb7185', marginTop: 4 }}>
-                            {job.failReason}
-                          </div>
-                        )}
-                      </td>
-                      <td className="td">
-                        <span className={`badge ${badgeCls}`}>{job.status}</span>
-                      </td>
-                      <td className="td mono">{job.itemCount || 0}</td>
-                      <td className="td mono">{job.lastDate || '-'}</td>
-                      <td className="td" style={{ textAlign: 'right' }}>
-                        {job.status === 'RUNNING' && (
-                          <button
-                            className="btn"
-                            style={{ padding: '7px 10px' }}
-                            type="button"
-                            onClick={() => abortWatchdogJob(job, 'Manual Stop')}
-                          >
-                            <X size={14} />
-                            Stop
-                          </button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-
-          <div className="smallNote">
-            <b>Note:</b> Export happens automatically once all jobs are done (single CSV internally), then the pipeline continues.
-          </div>
-        </div>
-      </div>
     </div>
     </div>
   );
